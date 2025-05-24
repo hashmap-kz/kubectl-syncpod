@@ -105,7 +105,8 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 				{
 					Name:    helperContainer,
 					Image:   helperImage,
-					Command: []string{"sleep", "3600"},
+					Command: []string{"sleep", "infinity"},
+					// Command: []string{"tail", "-f", "/dev/null"},
 					VolumeMounts: []corev1.VolumeMount{
 						{Name: "data", MountPath: mountPath},
 					},
