@@ -19,7 +19,7 @@ import (
 const (
 	helperContainer = "helper"
 	helperImage     = "alpine"
-	mountPath       = "/wals"
+	mountPath       = "/var/lib/postgresql/data"
 )
 
 func main() {
