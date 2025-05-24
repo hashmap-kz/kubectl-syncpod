@@ -145,41 +145,104 @@ func deleteHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 
 func streamUpload(pod, container, ns, local, remote string) error {
 	cmd := exec.Command("kubectl", "exec", "-i", pod, "-c", container, "-n", ns,
-		"--", "tar", "xzf", "-", "-C", mountPath+remote)
-	tar := exec.Command("tar", "czf", "-", "-C", local, ".")
-	pipe, err := tar.StdoutPipe()
+		"--", "tar", "xzf", "-", "-C", filepath.Join(mountPath, remote))
+	tarCmd := exec.Command("tar", "czf", "-", "-C", local, ".")
+	pipe, err := tarCmd.StdoutPipe()
 	if err != nil {
 		return err
 	}
 	cmd.Stdin = pipe
 
-	if err := tar.Start(); err != nil {
+	if err := tarCmd.Start(); err != nil {
 		return err
 	}
 	if err := cmd.Run(); err != nil {
 		return err
 	}
-	return tar.Wait()
+	return tarCmd.Wait()
 }
 
 func streamDownload(pod, container, ns, remote, local string) error {
 	cmd := exec.Command("kubectl", "exec", "-i", pod, "-c", container, "-n", ns,
 		"--", "tar", "czf", "-", "-C", filepath.Join(mountPath, remote), ".")
-	tar := exec.Command("tar", "xzf", "-", "-C", local)
+	tarCmd := exec.Command("tar", "xzf", "-", "-C", local)
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
 	}
-	tar.Stdin = pipe
+	tarCmd.Stdin = pipe
 
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	if err := tar.Run(); err != nil {
+	if err := tarCmd.Run(); err != nil {
 		return err
 	}
 	return cmd.Wait()
 }
+
+//func streamDownload(pod, container, ns, remote, local string) error {
+//	remotePath := filepath.Join(mountPath, filepath.Clean(remote))
+//	local = filepath.Clean(local)
+//
+//	// Prepare kubectl exec
+//	cmd := exec.Command("kubectl", "exec", "-i", pod, "-c", container, "-n", ns,
+//		"--", "tar", "czf", "-", "-C", remotePath, ".")
+//	stdout, err := cmd.StdoutPipe()
+//	if err != nil {
+//		return err
+//	}
+//
+//	if err := cmd.Start(); err != nil {
+//		return err
+//	}
+//
+//	// Wrap in gzip
+//	gr, err := gzip.NewReader(stdout)
+//	if err != nil {
+//		return err
+//	}
+//	defer gr.Close()
+//
+//	tr := tar.NewReader(gr)
+//
+//	for {
+//		header, err := tr.Next()
+//		if err == io.EOF {
+//			break
+//		}
+//		if err != nil {
+//			return err
+//		}
+//
+//		target := filepath.Join(local, header.Name)
+//		fmt.Println("Extracting:", target)
+//
+//		switch header.Typeflag {
+//		case tar.TypeDir:
+//			err = os.MkdirAll(target, os.FileMode(header.Mode))
+//		case tar.TypeReg:
+//			err = os.MkdirAll(filepath.Dir(target), 0o755)
+//			if err == nil {
+//				outFile, err := os.Create(target)
+//				if err != nil {
+//					return err
+//				}
+//				if _, err := io.Copy(outFile, tr); err != nil {
+//					outFile.Close()
+//					return err
+//				}
+//				outFile.Close()
+//				err = os.Chmod(target, os.FileMode(header.Mode))
+//			}
+//		}
+//		if err != nil {
+//			return err
+//		}
+//	}
+//
+//	return cmd.Wait()
+//}
 
 func randString(n int) string {
 	letters := []rune("abcdefghijklmnopqrstuvwxyz")
