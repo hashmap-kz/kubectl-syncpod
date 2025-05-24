@@ -93,14 +93,15 @@ func run(mode, pvc, namespace, local, remote, mountPath string) error {
 }
 
 func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace, pvc, mountPath string) (string, error) {
-	podName := "syncpod-helper-" + randString(5)
+	podName := "syncpod-helper-" + randString(7)
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      podName,
 			Namespace: namespace,
 		},
 		Spec: corev1.PodSpec{
-			RestartPolicy: corev1.RestartPolicyNever,
+			ActiveDeadlineSeconds: pointerToInt64(86400 / 2), // TODO: configure
+			RestartPolicy:         corev1.RestartPolicyNever,
 			Containers: []corev1.Container{
 				{
 					Name:    helperContainer,
@@ -192,4 +193,8 @@ func randString(n int) string {
 		s[i] = letters[rand.Intn(len(letters))]
 	}
 	return string(s)
+}
+
+func pointerToInt64(i int64) *int64 {
+	return &i
 }
