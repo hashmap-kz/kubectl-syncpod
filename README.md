@@ -19,3 +19,12 @@ go run main.go download --namespace pgrwl-test --pvc postgres-data --mount-path=
 | Requires container to run as root         | Often yes                       | Often yes               | ❌ (helper pod runs separately)   |
 | Safe for production workloads             | ⚠️ Risky                        | ⚠️ Risky                | ✅                                |
 | Auto-cleans after sync                    | ❌                               | ❌                       | ✅ (optional)                     |
+
+### 🚀 When to Use This Plugin
+
+Use kubectl-syncpod instead of kubectl cp or kubectl exec when:
+
+- Your main pod has restricted permissions or runs with readOnlyRootFilesystem
+- Your containers are minimal (distroless, scratch, etc.)
+- You want to sync to a volume (PVC) rather than the container FS
+- You need a safe way to upload or download large files without modifying your workload
