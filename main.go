@@ -19,11 +19,10 @@ import (
 const (
 	helperContainer = "helper"
 	helperImage     = "alpine"
-	mountPath       = "/var/lib/postgresql/data"
 )
 
 func main() {
-	var namespace, pvcName string
+	var namespace, pvcName, mountPath string
 
 	rootCmd := &cobra.Command{Use: "kubectl-syncpod"}
 
@@ -32,7 +31,7 @@ func main() {
 		Short: "Upload local files to a PVC via temporary pod",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return run("upload", pvcName, namespace, args[0], args[1])
+			return run("upload", pvcName, namespace, args[0], args[1], mountPath)
 		},
 	}
 	downloadCmd := &cobra.Command{
@@ -40,23 +39,27 @@ func main() {
 		Short: "Download files from a PVC via temporary pod",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return run("download", pvcName, namespace, args[1], args[0])
+			return run("download", pvcName, namespace, args[1], args[0], mountPath)
 		},
 	}
 
 	uploadCmd.Flags().StringVar(&namespace, "namespace", "default", "Namespace")
 	uploadCmd.Flags().StringVar(&pvcName, "pvc", "", "PVC name (required)")
+	uploadCmd.Flags().StringVar(&mountPath, "mount-path", "", "Mount path inside the helper pod (required)")
+	downloadCmd.Flags().StringVar(&mountPath, "mount-path", "", "Mount path inside the helper pod (required)")
 	downloadCmd.Flags().StringVar(&namespace, "namespace", "default", "Namespace")
 	downloadCmd.Flags().StringVar(&pvcName, "pvc", "", "PVC name (required)")
 
-	_ = uploadCmd.MarkFlagRequired("pvc")
-	_ = downloadCmd.MarkFlagRequired("pvc")
+	for _, req := range []string{"pvc", "mount-path"} {
+		_ = uploadCmd.MarkFlagRequired(req)
+		_ = downloadCmd.MarkFlagRequired(req)
+	}
 
 	rootCmd.AddCommand(uploadCmd, downloadCmd)
 	_ = rootCmd.Execute()
 }
 
-func run(mode, pvc, namespace, local, remote string) error {
+func run(mode, pvc, namespace, local, remote, mountPath string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
@@ -73,7 +76,7 @@ func run(mode, pvc, namespace, local, remote string) error {
 		return err
 	}
 
-	podName, err := createHelperPod(ctx, client, namespace, pvc)
+	podName, err := createHelperPod(ctx, client, namespace, pvc, mountPath)
 	if err != nil {
 		return err
 	}
@@ -81,15 +84,15 @@ func run(mode, pvc, namespace, local, remote string) error {
 
 	switch mode {
 	case "upload":
-		return streamUpload(podName, helperContainer, namespace, local, remote)
+		return streamUpload(podName, helperContainer, namespace, local, remote, mountPath)
 	case "download":
-		return streamDownload(podName, helperContainer, namespace, remote, local)
+		return streamDownload(podName, helperContainer, namespace, remote, local, mountPath)
 	default:
 		return fmt.Errorf("unknown mode: %s", mode)
 	}
 }
 
-func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace, pvc string) (string, error) {
+func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace, pvc, mountPath string) (string, error) {
 	podName := "syncpod-helper-" + randString(5)
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -140,10 +143,10 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 }
 
 func deleteHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace, name string) {
-	//_ = client.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	_ = client.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{})
 }
 
-func streamUpload(pod, container, ns, local, remote string) error {
+func streamUpload(pod, container, ns, local, remote, mountPath string) error {
 	cmd := exec.Command("kubectl", "exec", "-i", pod, "-c", container, "-n", ns,
 		"--", "tar", "xzf", "-", "-C", filepath.Join(mountPath, remote))
 	tarCmd := exec.Command("tar", "czf", "-", "-C", local, ".")
@@ -162,7 +165,7 @@ func streamUpload(pod, container, ns, local, remote string) error {
 	return tarCmd.Wait()
 }
 
-func streamDownload(pod, container, ns, remote, local string) error {
+func streamDownload(pod, container, ns, remote, local, mountPath string) error {
 	cmd := exec.Command("kubectl", "exec", "-i", pod, "-c", container, "-n", ns,
 		"--", "tar", "czf", "-", "-C", filepath.Join(mountPath, remote), ".")
 	tarCmd := exec.Command("tar", "xzf", "-", "-C", local)
