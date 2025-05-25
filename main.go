@@ -19,6 +19,5 @@ func main() {
 	rootCmd := cmd.NewRootCmd(ctx, streams)
 	if err := rootCmd.Execute(); err != nil {
 		slog.Error("error executing command", slog.Any("err", err))
-		os.Exit(1)
 	}
 }
