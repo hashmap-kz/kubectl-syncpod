@@ -12,7 +12,11 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/hashmap-kz/kubectl-syncpod/pkg/clients"
+	"github.com/pkg/sftp"
+
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,6 +30,7 @@ import (
 const (
 	helperContainer = "helper"
 	helperImage     = "alpine"
+	helperService   = "syncpod-sshd"
 )
 
 func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath string) error {
@@ -51,6 +56,18 @@ func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath str
 		defer cancel()
 		if err := deleteHelperPod(cleanupCtx, client, namespace, podName); err != nil {
 			slog.Error("cannot delete helper pod", slog.Any("err", err))
+		}
+	}()
+
+	err = createNodePortService(ctx, client, namespace, helperService, 30154)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := deleteHelperService(cleanupCtx, client, namespace, helperService); err != nil {
+			slog.Error("cannot delete helper service", slog.Any("err", err))
 		}
 	}()
 
@@ -83,6 +100,7 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      podName,
 			Namespace: namespace,
+			Labels:    labels(),
 		},
 		Spec: corev1.PodSpec{
 			NodeName:              pvcNodeName,
@@ -90,14 +108,25 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 			RestartPolicy:         corev1.RestartPolicyNever,
 			Containers: []corev1.Container{
 				{
-					Name:    helperContainer,
-					Image:   helperImage,
-					Command: []string{"sleep", "infinity"},
-					// Command: []string{"tail", "-f", "/dev/null"},
+					Name:  helperContainer,
+					Image: helperImage,
+					Command: []string{"sh", "-c", `
+  apk update && apk add openssh &&
+  echo "root:root" | chpasswd &&
+  echo "PermitRootLogin yes" >> /etc/ssh/sshd_config &&
+  ssh-keygen -A &&
+  /usr/sbin/sshd -D -p 2222
+`},
+
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "data",
 							MountPath: mountPath,
+						},
+					},
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: 2222,
 						},
 					},
 				},
@@ -130,7 +159,62 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 		time.Sleep(1 * time.Second)
 	}
 
+	time.Sleep(10 * time.Second) // TODO: sshd is ready
 	return podName, nil
+}
+
+func pointerToBool(b bool) *bool {
+	return &b
+}
+
+func createNodePortService(ctx context.Context, client *kubernetes.Clientset, namespace, serviceName string, nodePort int32) error {
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      serviceName,
+			Namespace: namespace,
+			Labels:    labels(),
+		},
+		Spec: corev1.ServiceSpec{
+			Type:     corev1.ServiceTypeNodePort,
+			Selector: labels(),
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "ssh",
+					Port:       2222,                // Exposed port
+					TargetPort: intstrFromInt(2222), // Inside container
+					NodePort:   nodePort,            // e.g. 32222
+					Protocol:   corev1.ProtocolTCP,
+				},
+			},
+		},
+	}
+
+	_, err := client.CoreV1().Services(namespace).Create(ctx, svc, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("create service: %w", err)
+	}
+
+	fmt.Printf("NodePort service %q created. Connect using: sftp -P %d sync@<node-ip>\n", serviceName, nodePort)
+	return nil
+}
+
+func labels() map[string]string {
+	return map[string]string{
+		"app": helperService,
+	}
+}
+
+func intstrFromInt(i int) intstr.IntOrString {
+	return intstr.IntOrString{Type: intstr.Int, IntVal: int32(i)}
+}
+
+func deleteHelperService(ctx context.Context, client *kubernetes.Clientset, namespace, name string) error {
+	err := client.CoreV1().Services(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+	slog.Info("helper service deleted", slog.String("name", name))
+	return nil
 }
 
 func deleteHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace, name string) error {
@@ -207,6 +291,29 @@ func pointerToInt64(i int64) *int64 {
 /////// download ///////
 
 func streamDownloadExecAPI(
+	ctx context.Context,
+	config *rest.Config,
+	clientset *kubernetes.Clientset,
+	pod, container, ns, remote, local, mountPath string,
+) error {
+	client, err := clients.NewSSHClient("10.40.240.165", 30154, "root", "root", "", "")
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	sfptClient, err := sftp.NewClient(client)
+	if err != nil {
+		return err
+	}
+	defer sfptClient.Close()
+
+	remotePath := filepath.ToSlash(filepath.Join(mountPath, filepath.Clean(remote)))
+	local = filepath.ToSlash(filepath.Clean(local))
+	err = downloadRecursive(sfptClient, remotePath, local)
+	return err
+}
+
+func streamDownloadExecAPI0(
 	ctx context.Context,
 	config *rest.Config,
 	clientset *kubernetes.Clientset,
@@ -448,5 +555,50 @@ func streamUploadExecAPI(
 		return fmt.Errorf("tar stream write failed: %w", err)
 	}
 
+	return nil
+}
+
+// download SFTP
+
+func downloadRecursive(client *sftp.Client, remotePath, localPath string) error {
+	walker := client.Walk(remotePath)
+	for walker.Step() {
+		if err := walker.Err(); err != nil {
+			return err
+		}
+		relPath, _ := filepath.Rel(remotePath, walker.Path())
+		localFilePath := filepath.Join(localPath, relPath)
+
+		if walker.Stat().IsDir() {
+			if err := os.MkdirAll(localFilePath, 0o755); err != nil {
+				return fmt.Errorf("mkdir %s: %w", localFilePath, err)
+			}
+			continue
+		}
+
+		// It's a file, download it
+		srcFile, err := client.Open(walker.Path())
+		if err != nil {
+			return fmt.Errorf("open remote: %w", err)
+		}
+		defer srcFile.Close()
+
+		if err := os.MkdirAll(filepath.Dir(localFilePath), 0o755); err != nil {
+			return fmt.Errorf("mkdir for file: %w", err)
+		}
+
+		dstFile, err := os.Create(localFilePath)
+		if err != nil {
+			return fmt.Errorf("create local: %w", err)
+		}
+
+		_, err = io.Copy(dstFile, srcFile)
+		dstFile.Close()
+		if err != nil {
+			return fmt.Errorf("copy %s: %w", walker.Path(), err)
+		}
+
+		fmt.Println("Downloaded:", walker.Path(), "→", localFilePath)
+	}
 	return nil
 }
