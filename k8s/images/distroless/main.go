@@ -16,6 +16,6 @@ func main() {
 		if err != nil {
 			log.Printf("ERROR create file: %v", err)
 		}
-		time.Sleep(5 * time.Second)
+		time.Sleep(25 * time.Second)
 	}
 }
