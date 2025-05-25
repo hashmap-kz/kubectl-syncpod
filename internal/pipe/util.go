@@ -1,0 +1,28 @@
+package pipe
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/hashmap-kz/kubectl-syncpod/internal/clients"
+)
+
+func waitForSSHReady(host string, port int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		client, err := newSFTPClient(host, port)
+		if err == nil {
+			return client.Close()
+		}
+	}
+	return fmt.Errorf("sshd not ready on %s:%d after %v", host, port, timeout)
+}
+
+func newSFTPClient(host string, port int) (*clients.SFTPClient, error) {
+	return clients.NewSFTPClient(&clients.SFTPConfig{
+		Host: host,
+		Port: port,
+		User: "root",
+		Pass: "root",
+	})
+}
