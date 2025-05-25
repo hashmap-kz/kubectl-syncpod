@@ -3,6 +3,7 @@ package pipe
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -12,16 +13,21 @@ import (
 	"github.com/pkg/sftp"
 )
 
+const (
+	sshWaitTimeout = 30 * time.Second
+)
+
 type downloadJob struct {
 	RemotePath string
 	LocalPath  string
 }
 
 func Download(host string, port int, remote, local, mountPath string) error {
-	if err := waitForSSHReady(host, port, 30*time.Second); err != nil {
+	if err := waitForSSHReady(host, port, sshWaitTimeout); err != nil {
 		return err
 	}
 
+	slog.Info("init SSH client")
 	client, err := clients.NewSSHClient(host, port, "root", "root", "", "")
 	if err != nil {
 		return err
@@ -35,15 +41,19 @@ func Download(host string, port int, remote, local, mountPath string) error {
 
 	remotePath := filepath.ToSlash(filepath.Join(mountPath, filepath.Clean(remote)))
 	local = filepath.ToSlash(filepath.Clean(local))
+
+	slog.Info("begin to download files", slog.String("remote", remotePath), slog.String("local", local))
 	err = downloadRecursive(sfptClient, remotePath, local)
 	return err
 }
 
 func waitForSSHReady(host string, port int, timeout time.Duration) error {
+	slog.Info("waiting while SSHD is ready")
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		client, err := clients.NewSSHClient(host, port, "root", "root", "", "")
 		if err == nil {
+			slog.Info("SSHD is ready")
 			client.Close()
 			return nil
 		}
@@ -70,7 +80,10 @@ func downloadRecursive(client *sftp.Client, remotePath, localPath string) error 
 					}
 					return
 				}
-				fmt.Println("Downloaded:", job.RemotePath, "→", job.LocalPath)
+				slog.Debug("download",
+					slog.String("remote", filepath.ToSlash(job.RemotePath)),
+					slog.String("local", filepath.ToSlash(job.LocalPath)),
+				)
 			}
 		}()
 	}
