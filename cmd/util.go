@@ -24,11 +24,12 @@ const (
 	helperContainer = "helper"
 	helperImage     = "alpine"
 	helperService   = "syncpod-sshd"
-
-	// TODO: nodeIP + nodePort
-	host = "10.40.240.165"
-	port = 30154
 )
+
+type nodeInfo struct {
+	name string
+	addr string
+}
 
 func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath string) error {
 	config, err := rest.InClusterConfig()
@@ -44,7 +45,12 @@ func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath str
 		return err
 	}
 
-	podName, err := createHelperPod(ctx, client, namespace, pvc, mountPath)
+	node, err := getNodeInfo(ctx, client, namespace, pvc)
+	if err != nil {
+		return err
+	}
+
+	podName, err := createHelperPod(ctx, client, namespace, pvc, mountPath, node.name)
 	if err != nil {
 		return err
 	}
@@ -56,7 +62,7 @@ func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath str
 		}
 	}()
 
-	err = createNodePortService(ctx, client, namespace, helperService, 30154)
+	port, err := createNodePortService(ctx, client, namespace)
 	if err != nil {
 		return err
 	}
@@ -70,13 +76,13 @@ func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath str
 
 	switch mode {
 	case "upload":
-		return pipe.Upload(host, port,
+		return pipe.Upload(node.addr, int(port),
 			filepath.ToSlash(local),
 			filepath.ToSlash(remote),
 			filepath.ToSlash(mountPath),
 		)
 	case "download":
-		return pipe.Download(host, port,
+		return pipe.Download(node.addr, int(port),
 			filepath.ToSlash(remote),
 			filepath.ToSlash(local),
 			filepath.ToSlash(mountPath),
@@ -86,12 +92,7 @@ func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath str
 	}
 }
 
-func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace, pvc, mountPath string) (string, error) {
-	pvcNodeName, err := getPVCNodeName(ctx, client, namespace, pvc)
-	if err != nil {
-		return "", err
-	}
-
+func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace, pvc, mountPath, pvcNodeName string) (string, error) {
 	podName := "syncpod-helper-" + randString(7)
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -112,7 +113,7 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
   echo "root:root" | chpasswd &&
   echo "PermitRootLogin yes" >> /etc/ssh/sshd_config &&
   ssh-keygen -A &&
-  /usr/sbin/sshd -D -p 2222
+  /usr/sbin/sshd -D -p 2525
 `},
 
 					VolumeMounts: []corev1.VolumeMount{
@@ -123,7 +124,7 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 					},
 					Ports: []corev1.ContainerPort{
 						{
-							ContainerPort: 2222,
+							ContainerPort: 2525,
 						},
 					},
 				},
@@ -140,7 +141,7 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 			},
 		},
 	}
-	_, err = client.CoreV1().Pods(namespace).Create(ctx, pod, metav1.CreateOptions{})
+	_, err := client.CoreV1().Pods(namespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
 		return "", err
 	}
@@ -159,10 +160,10 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 	return podName, nil
 }
 
-func createNodePortService(ctx context.Context, client *kubernetes.Clientset, namespace, serviceName string, nodePort int32) error {
+func createNodePortService(ctx context.Context, client *kubernetes.Clientset, namespace string) (int32, error) {
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceName,
+			Name:      helperService,
 			Namespace: namespace,
 			Labels:    labels(),
 		},
@@ -172,9 +173,8 @@ func createNodePortService(ctx context.Context, client *kubernetes.Clientset, na
 			Ports: []corev1.ServicePort{
 				{
 					Name:       "ssh",
-					Port:       2222,                // Exposed port
-					TargetPort: intstrFromInt(2222), // Inside container
-					NodePort:   nodePort,            // e.g. 32222
+					Port:       2525,                // Exposed port
+					TargetPort: intstrFromInt(2525), // Inside container
 					Protocol:   corev1.ProtocolTCP,
 				},
 			},
@@ -183,11 +183,14 @@ func createNodePortService(ctx context.Context, client *kubernetes.Clientset, na
 
 	_, err := client.CoreV1().Services(namespace).Create(ctx, svc, metav1.CreateOptions{})
 	if err != nil {
-		return fmt.Errorf("create service: %w", err)
+		return -1, fmt.Errorf("create service: %w", err)
 	}
 
-	fmt.Printf("NodePort service %q created. Connect using: sftp -P %d sync@<node-ip>\n", serviceName, nodePort)
-	return nil
+	svcCreated, err := client.CoreV1().Services(namespace).Get(ctx, helperService, metav1.GetOptions{})
+	if err != nil {
+		return -1, err
+	}
+	return svcCreated.Spec.Ports[0].NodePort, nil
 }
 
 func labels() map[string]string {
@@ -216,6 +219,45 @@ func deleteHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 	}
 	slog.Info("helper pod deleted", slog.String("name", name))
 	return nil
+}
+
+func getNodeInfo(ctx context.Context, client *kubernetes.Clientset, namespace, pvc string) (*nodeInfo, error) {
+	// get node name
+	pvcNodeName, err := getPVCNodeName(ctx, client, namespace, pvc)
+	if err != nil {
+		return nil, err
+	}
+
+	// get node IP addr
+	node, err := client.CoreV1().Nodes().Get(ctx, pvcNodeName, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	addresses := node.Status.Addresses
+	if len(addresses) == 0 {
+		return nil, fmt.Errorf("cannot decide node IP: %s", pvcNodeName)
+	}
+	var nodeAddr string
+	for _, addr := range addresses {
+		if addr.Type == corev1.NodeInternalIP {
+			nodeAddr = addr.Address
+		}
+	}
+	if nodeAddr == "" {
+		for _, addr := range addresses {
+			if addr.Type == corev1.NodeHostName {
+				nodeAddr = addr.Address
+			}
+		}
+	}
+	if nodeAddr == "" {
+		return nil, fmt.Errorf("cannot decide node IP: %s", pvcNodeName)
+	}
+
+	return &nodeInfo{
+		name: pvcNodeName,
+		addr: nodeAddr,
+	}, nil
 }
 
 func getPVCNodeName(ctx context.Context, client *kubernetes.Clientset, namespace, pvcName string) (string, error) {
