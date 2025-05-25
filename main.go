@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
@@ -24,20 +25,25 @@ const (
 func main() {
 	var namespace, pvcName, mountPath string
 
-	rootCmd := &cobra.Command{Use: "kubectl-syncpod"}
+	rootCmd := &cobra.Command{
+		Use:          "kubectl-syncpod",
+		SilenceUsage: true,
+	}
 
 	uploadCmd := &cobra.Command{
-		Use:   "upload <local-dir> <remote-path>",
-		Short: "Upload local files to a PVC via temporary pod",
-		Args:  cobra.ExactArgs(2),
+		Use:          "upload <local-dir> <remote-path>",
+		Short:        "Upload local files to a PVC via temporary pod",
+		SilenceUsage: true,
+		Args:         cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return run("upload", pvcName, namespace, args[0], args[1], mountPath)
 		},
 	}
 	downloadCmd := &cobra.Command{
-		Use:   "download <remote-path> <local-dir>",
-		Short: "Download files from a PVC via temporary pod",
-		Args:  cobra.ExactArgs(2),
+		Use:          "download <remote-path> <local-dir>",
+		Short:        "Download files from a PVC via temporary pod",
+		SilenceUsage: true,
+		Args:         cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return run("download", pvcName, namespace, args[1], args[0], mountPath)
 		},
@@ -84,15 +90,26 @@ func run(mode, pvc, namespace, local, remote, mountPath string) error {
 
 	switch mode {
 	case "upload":
-		return streamUpload(podName, helperContainer, namespace, local, remote, mountPath)
+		return streamUpload(podName, helperContainer, namespace,
+			filepath.ToSlash(local),
+			filepath.ToSlash(remote),
+			filepath.ToSlash(mountPath),
+		)
 	case "download":
-		return streamDownload(podName, helperContainer, namespace, remote, local, mountPath)
+		return streamDownload(podName, helperContainer, namespace,
+			filepath.ToSlash(remote),
+			filepath.ToSlash(local),
+			filepath.ToSlash(mountPath),
+		)
 	default:
 		return fmt.Errorf("unknown mode: %s", mode)
 	}
 }
 
 func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace, pvc, mountPath string) (string, error) {
+	// TODO: CLI --target-node
+	pvcNodeName, _ := getPVCNodeName(ctx, client, namespace, pvc)
+
 	podName := "syncpod-helper-" + randString(7)
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -100,6 +117,7 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 			Namespace: namespace,
 		},
 		Spec: corev1.PodSpec{
+			NodeName:              pvcNodeName,
 			ActiveDeadlineSeconds: pointerToInt64(86400 / 2), // TODO: configure
 			RestartPolicy:         corev1.RestartPolicyNever,
 			Containers: []corev1.Container{
@@ -148,7 +166,53 @@ func deleteHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 	_ = client.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{})
 }
 
-func streamUpload(pod, container, ns, local, remote, mountPath string) error {
+func getPVCNodeName(ctx context.Context, client *kubernetes.Clientset, namespace, pvcName string) (string, error) {
+	// 1) Try to find a pod that uses the PVC
+	pods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return "", fmt.Errorf("listing pods: %w", err)
+	}
+
+	for _, pod := range pods.Items {
+		for _, vol := range pod.Spec.Volumes {
+			if vol.PersistentVolumeClaim != nil && vol.PersistentVolumeClaim.ClaimName == pvcName {
+				if pod.Spec.NodeName != "" {
+					return pod.Spec.NodeName, nil // Fast path
+				}
+			}
+		}
+	}
+
+	// 2) Fallback - check PVC -> PV -> NodeAffinity
+	pvc, err := client.CoreV1().PersistentVolumeClaims(namespace).Get(ctx, pvcName, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("get PVC: %w", err)
+	}
+	if pvc.Status.Phase != corev1.ClaimBound || pvc.Spec.VolumeName == "" {
+		return "", fmt.Errorf("PVC %s is not bound to any PV", pvcName)
+	}
+
+	pv, err := client.CoreV1().PersistentVolumes().Get(ctx, pvc.Spec.VolumeName, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("get PV %s: %w", pvc.Spec.VolumeName, err)
+	}
+
+	if pv.Spec.NodeAffinity != nil && pv.Spec.NodeAffinity.Required != nil {
+		for _, term := range pv.Spec.NodeAffinity.Required.NodeSelectorTerms {
+			for _, expr := range term.MatchExpressions {
+				if expr.Key == "kubernetes.io/hostname" &&
+					expr.Operator == corev1.NodeSelectorOpIn &&
+					len(expr.Values) > 0 {
+					return expr.Values[0], nil // Fallback path
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf("unable to determine node for PVC %q", pvcName)
+}
+
+func streamUpload0(pod, container, ns, local, remote, mountPath string) error {
 	cmd := exec.Command("kubectl", "exec", "-i", pod, "-c", container, "-n", ns,
 		"--", "tar", "xzf", "-", "-C", filepath.Join(mountPath, remote))
 	tarCmd := exec.Command("tar", "czf", "-", "-C", local, ".")
@@ -167,7 +231,7 @@ func streamUpload(pod, container, ns, local, remote, mountPath string) error {
 	return tarCmd.Wait()
 }
 
-func streamDownload(pod, container, ns, remote, local, mountPath string) error {
+func streamDownload0(pod, container, ns, remote, local, mountPath string) error {
 	cmd := exec.Command("kubectl", "exec", "-i", pod, "-c", container, "-n", ns,
 		"--", "tar", "czf", "-", "-C", filepath.Join(mountPath, remote), ".")
 	tarCmd := exec.Command("tar", "xzf", "-", "-C", local)
@@ -184,6 +248,85 @@ func streamDownload(pod, container, ns, remote, local, mountPath string) error {
 		return err
 	}
 	return cmd.Wait()
+}
+
+func streamUpload(pod, container, ns, local, remote, mountPath string) error {
+	remotePath := filepath.ToSlash(filepath.Join(mountPath, filepath.Clean(remote)))
+	local = filepath.ToSlash(filepath.Clean(local))
+
+	// Debug: show commands being run
+	fmt.Println("Running:", "tar czf - -C", local, ".", "|", "kubectl exec", pod, "-- tar xzf - -C", remotePath)
+
+	// Upload local dir to remote PVC path via helper pod
+	cmd := exec.Command("kubectl", "exec", "-i", pod, "-c", container, "-n", ns,
+		"--", "tar", "xzf", "-", "-C", remotePath)
+
+	tarCmd := exec.Command("tar", "czf", "-", "-C", local, ".")
+
+	// Pipe tar output to kubectl stdin
+	pipe, err := tarCmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("create stdout pipe: %w", err)
+	}
+	cmd.Stdin = pipe
+
+	// Stream stderr for both processes
+	cmd.Stderr = os.Stderr
+	tarCmd.Stderr = os.Stderr
+
+	if err := tarCmd.Start(); err != nil {
+		return fmt.Errorf("start local tar: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start kubectl exec: %w", err)
+	}
+
+	if err := tarCmd.Wait(); err != nil {
+		return fmt.Errorf("local tar failed: %w", err)
+	}
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("kubectl exec failed: %w", err)
+	}
+
+	return nil
+}
+
+func streamDownload(pod, container, ns, remote, local, mountPath string) error {
+	remotePath := filepath.ToSlash(filepath.Join(mountPath, filepath.Clean(remote)))
+	local = filepath.ToSlash(filepath.Clean(local))
+
+	cmd := exec.Command("kubectl", "exec", "-i", pod, "-c", container, "-n", ns,
+		"--", "tar", "czf", "-", "-C", remotePath, ".")
+	tarCmd := exec.Command("tar", "xzf", "-", "-C", local)
+
+	// Debug: print command args
+	fmt.Println("Running:", cmd.String(), "| tar xzf - -C", local)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("get stdout pipe: %w", err)
+	}
+	tarCmd.Stdin = stdout
+
+	// Capture stderr
+	cmd.Stderr = os.Stderr
+	tarCmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start kubectl exec: %w", err)
+	}
+	if err := tarCmd.Start(); err != nil {
+		return fmt.Errorf("start tar: %w", err)
+	}
+
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("kubectl exec failed: %w", err)
+	}
+	if err := tarCmd.Wait(); err != nil {
+		return fmt.Errorf("tar extract failed: %w", err)
+	}
+
+	return nil
 }
 
 func randString(n int) string {
