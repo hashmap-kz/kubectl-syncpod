@@ -32,6 +32,9 @@ type nodeInfo struct {
 }
 
 func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath string) error {
+	// config routine
+
+	slog.Info("init k8s config")
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		config, err = clientcmd.BuildConfigFromFlags("", clientcmd.RecommendedHomeFile)
@@ -40,16 +43,23 @@ func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath str
 		}
 	}
 
+	slog.Info("init k8s client")
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return err
 	}
 
+	// node
+
+	slog.Info("fetching target node to schedule pod on")
 	node, err := getNodeInfo(ctx, client, namespace, pvc)
 	if err != nil {
 		return err
 	}
 
+	// pod
+
+	slog.Info("creating pod")
 	err = createHelperPod(ctx, client, namespace, pvc, mountPath, node.name)
 	if err != nil {
 		return err
@@ -65,6 +75,9 @@ func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath str
 		}
 	}()
 
+	// service
+
+	slog.Info("creating service")
 	port, err := createNodePortService(ctx, client, namespace)
 	if err != nil {
 		return err
@@ -104,8 +117,6 @@ func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath str
 // objects
 
 func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace, pvc, mountPath, pvcNodeName string) error {
-	slog.Info("creating pod")
-
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      objName,
@@ -173,8 +184,6 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 }
 
 func createNodePortService(ctx context.Context, client *kubernetes.Clientset, namespace string) (int32, error) {
-	slog.Info("creating service")
-
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      objName,
@@ -232,8 +241,6 @@ func deleteHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 // node
 
 func getNodeInfo(ctx context.Context, client *kubernetes.Clientset, namespace, pvc string) (*nodeInfo, error) {
-	slog.Info("trying to fetch target node")
-
 	// get node name
 	pvcNodeName, err := getPVCNodeName(ctx, client, namespace, pvc)
 	if err != nil {
