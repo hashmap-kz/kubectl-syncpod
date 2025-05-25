@@ -23,27 +23,30 @@ type downloadJob struct {
 }
 
 func Download(host string, port int, remote, local, mountPath string) error {
+	slog.Info("waiting while SSHD is ready")
 	if err := waitForSSHReady(host, port, sshWaitTimeout); err != nil {
 		return err
 	}
 
 	slog.Info("init SSH client")
-	client, err := clients.NewSSHClient(host, port, "root", "root", "", "")
+	client, err := newSFTPClient(host, port)
 	if err != nil {
 		return err
 	}
-	defer client.Close()
-	sfptClient, err := sftp.NewClient(client)
-	if err != nil {
-		return err
-	}
-	defer sfptClient.Close()
+	defer func(client *clients.SFTPClient) {
+		err := client.Close()
+		if err != nil {
+			slog.Error("error closing SFTP client", slog.Any("err", err))
+		} else {
+			slog.Info("SFTP connection closed")
+		}
+	}(client)
 
 	remotePath := filepath.ToSlash(filepath.Join(mountPath, filepath.Clean(remote)))
 	local = filepath.ToSlash(filepath.Clean(local))
 
 	slog.Info("begin to download files", slog.String("remote", remotePath), slog.String("local", local))
-	err = downloadRecursive(sfptClient, remotePath, local)
+	err = downloadRecursive(client.SFTPClient(), remotePath, local)
 	if err != nil {
 		slog.Error("error while downloading files", slog.Any("err", err))
 	} else {
@@ -53,17 +56,23 @@ func Download(host string, port int, remote, local, mountPath string) error {
 }
 
 func waitForSSHReady(host string, port int, timeout time.Duration) error {
-	slog.Info("waiting while SSHD is ready")
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		client, err := clients.NewSSHClient(host, port, "root", "root", "", "")
+		client, err := newSFTPClient(host, port)
 		if err == nil {
-			slog.Info("SSHD is ready")
-			client.Close()
-			return nil
+			return client.Close()
 		}
 	}
 	return fmt.Errorf("sshd not ready on %s:%d after %v", host, port, timeout)
+}
+
+func newSFTPClient(host string, port int) (*clients.SFTPClient, error) {
+	return clients.NewSFTPClient(&clients.SFTPConfig{
+		Host: host,
+		Port: port,
+		User: "root",
+		Pass: "root",
+	})
 }
 
 func downloadRecursive(client *sftp.Client, remotePath, localPath string) error {
