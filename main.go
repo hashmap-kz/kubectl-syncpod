@@ -130,7 +130,7 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 						{
 							Name:      "data",
 							MountPath: mountPath,
-							ReadOnly:  true,
+							// ReadOnly:  true,
 						},
 					},
 				},
