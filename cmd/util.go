@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -26,9 +27,6 @@ const (
 )
 
 func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		config, err = clientcmd.BuildConfigFromFlags("", clientcmd.RecommendedHomeFile)
@@ -50,13 +48,13 @@ func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath str
 
 	switch mode {
 	case "upload":
-		return streamUploadExecAPI(config, client, podName, helperContainer, namespace,
+		return streamUploadExecAPI(ctx, config, client, podName, helperContainer, namespace,
 			filepath.ToSlash(local),
 			filepath.ToSlash(remote),
 			filepath.ToSlash(mountPath),
 		)
 	case "download":
-		return streamDownloadExecAPI(config, client, podName, helperContainer, namespace,
+		return streamDownloadExecAPI(ctx, config, client, podName, helperContainer, namespace,
 			filepath.ToSlash(remote),
 			filepath.ToSlash(local),
 			filepath.ToSlash(mountPath),
@@ -67,8 +65,10 @@ func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath str
 }
 
 func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace, pvc, mountPath string) (string, error) {
-	// TODO: CLI --target-node
-	pvcNodeName, _ := getPVCNodeName(ctx, client, namespace, pvc)
+	pvcNodeName, err := getPVCNodeName(ctx, client, namespace, pvc)
+	if err != nil {
+		return "", err
+	}
 
 	podName := "syncpod-helper-" + randString(7)
 	pod := &corev1.Pod{
@@ -106,7 +106,7 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 			},
 		},
 	}
-	_, err := client.CoreV1().Pods(namespace).Create(ctx, pod, metav1.CreateOptions{})
+	_, err = client.CoreV1().Pods(namespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
 		return "", err
 	}
@@ -126,7 +126,10 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 }
 
 func deleteHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace, name string) {
-	_ = client.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	err := client.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	if err != nil {
+		slog.Error("cannot delete helper pod", slog.Any("err", err))
+	}
 }
 
 func getPVCNodeName(ctx context.Context, client *kubernetes.Clientset, namespace, pvcName string) (string, error) {
@@ -136,8 +139,10 @@ func getPVCNodeName(ctx context.Context, client *kubernetes.Clientset, namespace
 		return "", fmt.Errorf("listing pods: %w", err)
 	}
 
-	for _, pod := range pods.Items {
-		for _, vol := range pod.Spec.Volumes {
+	for pi := range pods.Items {
+		pod := pods.Items[pi]
+		for vi := range pod.Spec.Volumes {
+			vol := pod.Spec.Volumes[vi]
 			if vol.PersistentVolumeClaim != nil && vol.PersistentVolumeClaim.ClaimName == pvcName {
 				if pod.Spec.NodeName != "" {
 					return pod.Spec.NodeName, nil // Fast path
@@ -179,6 +184,7 @@ func randString(n int) string {
 	letters := []rune("abcdefghijklmnopqrstuvwxyz")
 	s := make([]rune, n)
 	for i := range s {
+		//nolint:gosec
 		s[i] = letters[rand.Intn(len(letters))]
 	}
 	return string(s)
@@ -191,6 +197,7 @@ func pointerToInt64(i int64) *int64 {
 /////// download ///////
 
 func streamDownloadExecAPI(
+	ctx context.Context,
 	config *rest.Config,
 	clientset *kubernetes.Clientset,
 	pod, container, namespace, remote, local, mountPath string,
@@ -277,7 +284,7 @@ func streamDownloadExecAPI(
 		done <- nil
 	}()
 
-	err = exec.Stream(remotecommand.StreamOptions{
+	err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
 		Stdout: pw,
 		Stderr: os.Stderr,
 	})
@@ -296,6 +303,7 @@ func streamDownloadExecAPI(
 /////// upload ///////
 
 func streamUploadExecAPI(
+	ctx context.Context,
 	config *rest.Config,
 	clientset *kubernetes.Clientset,
 	pod, container, namespace, local, remote, mountPath string,
@@ -407,7 +415,7 @@ func streamUploadExecAPI(
 		done <- nil
 	}()
 
-	err = exec.Stream(remotecommand.StreamOptions{
+	err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
 		Stdin:  pr,
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
