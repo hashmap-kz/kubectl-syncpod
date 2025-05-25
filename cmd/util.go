@@ -241,6 +241,7 @@ func streamDownloadExecAPI(
 
 	go func() {
 		defer pr.Close()
+
 		gr, err := gzip.NewReader(pr)
 		if err != nil {
 			done <- fmt.Errorf("create gzip reader: %w", err)
@@ -251,6 +252,14 @@ func streamDownloadExecAPI(
 		tr := tar.NewReader(gr)
 
 		for {
+			select {
+			case <-ctx.Done():
+				done <- fmt.Errorf("context cancelled while extracting")
+				return
+			default:
+				// non-blocking ctx check, continue reading
+			}
+
 			header, err := tr.Next()
 			if err == io.EOF {
 				break
