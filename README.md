@@ -8,7 +8,7 @@ go run main.go download --namespace pgrwl-test --pvc postgres-data --mount-path=
 go run main.go download --namespace vault --pvc postgresql --mount-path=/var/lib/postgresql/data pgdata backups
 go run main.go download --namespace mon --pvc storage-victoriametrics --mount-path=/victoria-metrics-data . backups
 
-go run main.go upload --namespace vault --pvc postgresql --mount-path=/var/lib/postgresql/data notes pgdata
+ go run main.go upload --namespace vault --pvc postgresql --mount-path=/var/lib/postgresql/data pgdata k8s
 ```
 
 ## 🔍 Comparison Table
