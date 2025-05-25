@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/hashmap-kz/kubectl-syncpod/pkg/clients"
@@ -579,7 +580,36 @@ func streamUploadExecAPI(
 
 // download SFTP
 
+type downloadJob struct {
+	RemotePath string
+	LocalPath  string
+}
+
 func downloadRecursive(client *sftp.Client, remotePath, localPath string) error {
+	const workerCount = 4
+	jobs := make(chan downloadJob, 64)
+	errCh := make(chan error, 1)
+	var wg sync.WaitGroup
+
+	// Start worker pool
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range jobs {
+				if err := downloadFile(client, job.RemotePath, job.LocalPath); err != nil {
+					select {
+					case errCh <- err:
+					default:
+					}
+					return
+				}
+				fmt.Println("Downloaded:", job.RemotePath, "→", job.LocalPath)
+			}
+		}()
+	}
+
+	// Walk the SFTP tree
 	walker := client.Walk(remotePath)
 	for walker.Step() {
 		if err := walker.Err(); err != nil {
@@ -595,29 +625,88 @@ func downloadRecursive(client *sftp.Client, remotePath, localPath string) error 
 			continue
 		}
 
-		// It's a file, download it
-		srcFile, err := client.Open(walker.Path())
-		if err != nil {
-			return fmt.Errorf("open remote: %w", err)
+		select {
+		case jobs <- downloadJob{RemotePath: walker.Path(), LocalPath: localFilePath}:
+		case err := <-errCh:
+			close(jobs)
+			return err
 		}
-		defer srcFile.Close()
+	}
 
-		if err := os.MkdirAll(filepath.Dir(localFilePath), 0o755); err != nil {
-			return fmt.Errorf("mkdir for file: %w", err)
-		}
+	close(jobs)
+	wg.Wait()
 
-		dstFile, err := os.Create(localFilePath)
-		if err != nil {
-			return fmt.Errorf("create local: %w", err)
-		}
+	select {
+	case err := <-errCh:
+		return err
+	default:
+		return nil
+	}
+}
 
-		_, err = io.Copy(dstFile, srcFile)
-		dstFile.Close()
-		if err != nil {
-			return fmt.Errorf("copy %s: %w", walker.Path(), err)
-		}
+func downloadFile(client *sftp.Client, remotePath, localPath string) error {
+	srcFile, err := client.Open(remotePath)
+	if err != nil {
+		return fmt.Errorf("open remote: %w", err)
+	}
+	defer srcFile.Close()
 
-		fmt.Println("Downloaded:", walker.Path(), "→", localFilePath)
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+		return fmt.Errorf("mkdir for file: %w", err)
+	}
+
+	dstFile, err := os.Create(localPath)
+	if err != nil {
+		return fmt.Errorf("create local: %w", err)
+	}
+	defer dstFile.Close()
+
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		return fmt.Errorf("copy file: %w", err)
 	}
 	return nil
 }
+
+//
+//func downloadRecursive(client *sftp.Client, remotePath, localPath string) error {
+//	walker := client.Walk(remotePath)
+//	for walker.Step() {
+//		if err := walker.Err(); err != nil {
+//			return err
+//		}
+//		relPath, _ := filepath.Rel(remotePath, walker.Path())
+//		localFilePath := filepath.Join(localPath, relPath)
+//
+//		if walker.Stat().IsDir() {
+//			if err := os.MkdirAll(localFilePath, 0o755); err != nil {
+//				return fmt.Errorf("mkdir %s: %w", localFilePath, err)
+//			}
+//			continue
+//		}
+//
+//		// It's a file, download it
+//		srcFile, err := client.Open(walker.Path())
+//		if err != nil {
+//			return fmt.Errorf("open remote: %w", err)
+//		}
+//		defer srcFile.Close()
+//
+//		if err := os.MkdirAll(filepath.Dir(localFilePath), 0o755); err != nil {
+//			return fmt.Errorf("mkdir for file: %w", err)
+//		}
+//
+//		dstFile, err := os.Create(localFilePath)
+//		if err != nil {
+//			return fmt.Errorf("create local: %w", err)
+//		}
+//
+//		_, err = io.Copy(dstFile, srcFile)
+//		dstFile.Close()
+//		if err != nil {
+//			return fmt.Errorf("copy %s: %w", walker.Path(), err)
+//		}
+//
+//		fmt.Println("Downloaded:", walker.Path(), "→", localFilePath)
+//	}
+//	return nil
+//}
