@@ -6,10 +6,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -97,7 +95,7 @@ func run(mode, pvc, namespace, local, remote, mountPath string) error {
 
 	switch mode {
 	case "upload":
-		return streamUpload(podName, helperContainer, namespace,
+		return streamUploadExecAPI(config, client, podName, helperContainer, namespace,
 			filepath.ToSlash(local),
 			filepath.ToSlash(remote),
 			filepath.ToSlash(mountPath),
@@ -137,7 +135,6 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 						{
 							Name:      "data",
 							MountPath: mountPath,
-							// ReadOnly:  true,
 						},
 					},
 				},
@@ -223,66 +220,6 @@ func getPVCNodeName(ctx context.Context, client *kubernetes.Clientset, namespace
 	return "", fmt.Errorf("unable to determine node for PVC %q", pvcName)
 }
 
-func streamUpload0(pod, container, ns, local, remote, mountPath string) error {
-	cmd := exec.Command("kubectl", "exec", "-i", pod, "-c", container, "-n", ns,
-		"--", "tar", "xzf", "-", "-C", filepath.Join(mountPath, remote))
-	tarCmd := exec.Command("tar", "czf", "-", "-C", local, ".")
-	pipe, err := tarCmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	cmd.Stdin = pipe
-
-	if err := tarCmd.Start(); err != nil {
-		return err
-	}
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-	return tarCmd.Wait()
-}
-
-func streamUpload(pod, container, ns, local, remote, mountPath string) error {
-	remotePath := filepath.ToSlash(filepath.Join(mountPath, filepath.Clean(remote)))
-	local = filepath.ToSlash(filepath.Clean(local))
-
-	// Debug: show commands being run
-	fmt.Println("Running:", "tar czf - -C", local, ".", "|", "kubectl exec", pod, "-- tar xzf - -C", remotePath)
-
-	// Upload local dir to remote PVC path via helper pod
-	cmd := exec.Command("kubectl", "exec", "-i", pod, "-c", container, "-n", ns,
-		"--", "tar", "xzf", "-", "-C", remotePath)
-
-	tarCmd := exec.Command("tar", "czf", "-", "-C", local, ".")
-
-	// Pipe tar output to kubectl stdin
-	pipe, err := tarCmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("create stdout pipe: %w", err)
-	}
-	cmd.Stdin = pipe
-
-	// Stream stderr for both processes
-	cmd.Stderr = os.Stderr
-	tarCmd.Stderr = os.Stderr
-
-	if err := tarCmd.Start(); err != nil {
-		return fmt.Errorf("start local tar: %w", err)
-	}
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start kubectl exec: %w", err)
-	}
-
-	if err := tarCmd.Wait(); err != nil {
-		return fmt.Errorf("local tar failed: %w", err)
-	}
-	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("kubectl exec failed: %w", err)
-	}
-
-	return nil
-}
-
 func randString(n int) string {
 	letters := []rune("abcdefghijklmnopqrstuvwxyz")
 	s := make([]rune, n)
@@ -298,77 +235,16 @@ func pointerToInt64(i int64) *int64 {
 
 /////// download ///////
 
-// download-v1
-
-func streamDownload0(pod, container, ns, remote, local, mountPath string) error {
-	cmd := exec.Command("kubectl", "exec", "-i", pod, "-c", container, "-n", ns,
-		"--", "tar", "czf", "-", "-C", filepath.Join(mountPath, remote), ".")
-	tarCmd := exec.Command("tar", "xzf", "-", "-C", local)
-	pipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	tarCmd.Stdin = pipe
-
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	if err := tarCmd.Run(); err != nil {
-		return err
-	}
-	return cmd.Wait()
-}
-
-// download-v2
-
-func streamDownload(pod, container, ns, remote, local, mountPath string) error {
-	remotePath := filepath.ToSlash(filepath.Join(mountPath, filepath.Clean(remote)))
-	local = filepath.ToSlash(filepath.Clean(local))
-
-	cmd := exec.Command("kubectl", "exec", "-i", pod, "-c", container, "-n", ns,
-		"--", "tar", "czf", "-", "-C", remotePath, ".")
-	tarCmd := exec.Command("tar", "xzf", "-", "-C", local)
-
-	// Debug: print command args
-	fmt.Println("Running:", cmd.String(), "| tar xzf - -C", local)
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("get stdout pipe: %w", err)
-	}
-	tarCmd.Stdin = stdout
-
-	// Capture stderr
-	cmd.Stderr = os.Stderr
-	tarCmd.Stderr = os.Stderr
-
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start kubectl exec: %w", err)
-	}
-	if err := tarCmd.Start(); err != nil {
-		return fmt.Errorf("start tar: %w", err)
-	}
-
-	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("kubectl exec failed: %w", err)
-	}
-	if err := tarCmd.Wait(); err != nil {
-		return fmt.Errorf("tar extract failed: %w", err)
-	}
-
-	return nil
-}
-
-// download-v3
-
-func streamDownloadExecAPI(config *rest.Config, clientset *kubernetes.Clientset,
+func streamDownloadExecAPI(
+	config *rest.Config,
+	clientset *kubernetes.Clientset,
 	pod, container, namespace, remote, local, mountPath string,
 ) error {
 	remotePath := filepath.ToSlash(filepath.Join(mountPath, filepath.Clean(remote)))
 	local = filepath.ToSlash(filepath.Clean(local))
 
-	// Exec into the pod to run: tar czf - -C <remotePath> .
-	cmd := []string{"tar", "czf", "-", "-C", remotePath, "."}
+	cmd := []string{"tar", "czf", "-", "-C", filepath.ToSlash(filepath.Dir(remotePath)), filepath.Base(remotePath)}
+
 	req := clientset.CoreV1().RESTClient().Post().
 		Resource("pods").
 		Name(pod).
@@ -388,11 +264,9 @@ func streamDownloadExecAPI(config *rest.Config, clientset *kubernetes.Clientset,
 		return fmt.Errorf("create executor: %w", err)
 	}
 
-	// Create a pipe to receive the tar.gz stream
 	pr, pw := io.Pipe()
-
-	// Start untar goroutine
 	done := make(chan error, 1)
+
 	go func() {
 		defer pr.Close()
 		gr, err := gzip.NewReader(pr)
@@ -403,6 +277,7 @@ func streamDownloadExecAPI(config *rest.Config, clientset *kubernetes.Clientset,
 		defer gr.Close()
 
 		tr := tar.NewReader(gr)
+
 		for {
 			header, err := tr.Next()
 			if err == io.EOF {
@@ -414,8 +289,6 @@ func streamDownloadExecAPI(config *rest.Config, clientset *kubernetes.Clientset,
 			}
 
 			target := filepath.Join(local, header.Name)
-			log.Printf("download target: %s\n", target)
-
 			switch header.Typeflag {
 			case tar.TypeDir:
 				if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
@@ -443,14 +316,12 @@ func streamDownloadExecAPI(config *rest.Config, clientset *kubernetes.Clientset,
 					return
 				}
 			default:
-				// skip other types like symlinks
 				continue
 			}
 		}
 		done <- nil
 	}()
 
-	// Start the remote stream (tar czf -)
 	err = exec.Stream(remotecommand.StreamOptions{
 		Stdout: pw,
 		Stderr: os.Stderr,
@@ -460,9 +331,139 @@ func streamDownloadExecAPI(config *rest.Config, clientset *kubernetes.Clientset,
 	if err != nil {
 		return fmt.Errorf("remote tar exec failed: %w", err)
 	}
-
 	if err := <-done; err != nil {
 		return fmt.Errorf("untar failed: %w", err)
+	}
+
+	return nil
+}
+
+/////// upload  ///////
+
+func streamUploadExecAPI(
+	config *rest.Config,
+	clientset *kubernetes.Clientset,
+	pod, container, namespace, local, remote, mountPath string,
+) error {
+	local = filepath.Clean(local)
+	remotePath := filepath.ToSlash(filepath.Join(mountPath, filepath.Clean(remote)))
+
+	info, err := os.Stat(local)
+	if err != nil {
+		return fmt.Errorf("stat local path: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("local path must be a directory: %s", local)
+	}
+	base := filepath.Base(local)
+
+	cmd := []string{"tar", "xzf", "-", "-C", remotePath}
+	req := clientset.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Name(pod).
+		Namespace(namespace).
+		SubResource("exec").
+		VersionedParams(&corev1.PodExecOptions{
+			Container: container,
+			Command:   cmd,
+			Stdin:     true,
+			Stdout:    true,
+			Stderr:    true,
+			TTY:       false,
+		}, scheme.ParameterCodec)
+
+	exec, err := remotecommand.NewSPDYExecutor(config, "POST", req.URL())
+	if err != nil {
+		return fmt.Errorf("create executor: %w", err)
+	}
+
+	pr, pw := io.Pipe()
+	done := make(chan error, 1)
+
+	go func() {
+		defer pw.Close()
+		gw := gzip.NewWriter(pw)
+		tw := tar.NewWriter(gw)
+
+		err := filepath.WalkDir(local, func(path string, d os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			rel, err := filepath.Rel(local, path)
+			if err != nil {
+				return err
+			}
+			rel = filepath.ToSlash(filepath.Join(base, rel)) // preserve top-level dir
+
+			if rel == base {
+				// Emit top-level directory explicitly
+				info, err := d.Info()
+				if err != nil {
+					return err
+				}
+				hdr, err := tar.FileInfoHeader(info, "")
+				if err != nil {
+					return err
+				}
+				hdr.Name = rel
+				return tw.WriteHeader(hdr)
+			}
+
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			hdr, err := tar.FileInfoHeader(info, "")
+			if err != nil {
+				return err
+			}
+			hdr.Name = rel
+
+			if err := tw.WriteHeader(hdr); err != nil {
+				return err
+			}
+
+			if info.Mode().IsRegular() {
+				f, err := os.Open(path)
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+
+				if _, err := io.Copy(tw, f); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			done <- fmt.Errorf("walk and write tar: %w", err)
+			return
+		}
+
+		if err := tw.Close(); err != nil {
+			done <- fmt.Errorf("close tar: %w", err)
+			return
+		}
+		if err := gw.Close(); err != nil {
+			done <- fmt.Errorf("close gzip: %w", err)
+			return
+		}
+		done <- nil
+	}()
+
+	err = exec.Stream(remotecommand.StreamOptions{
+		Stdin:  pr,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+	})
+	pr.Close()
+
+	if err != nil {
+		return fmt.Errorf("remote tar exec failed: %w", err)
+	}
+	if err := <-done; err != nil {
+		return fmt.Errorf("tar stream write failed: %w", err)
 	}
 
 	return nil
