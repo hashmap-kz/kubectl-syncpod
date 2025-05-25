@@ -1,34 +1,40 @@
 package cmd
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
-	"math/rand"
-	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/hashmap-kz/kubectl-syncpod/internal/pipe"
+
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/tools/remotecommand"
 )
 
 const (
-	helperContainer = "helper"
-	helperImage     = "alpine"
+	helperImage = "alpine" // TODO: configure
+	objName     = "syncpod-bab9e5b1-eaa7-4b3b-964e-103f0a4f8cc3"
 )
 
+var activeDeadlineSeconds int64 = 86400 / 2 // TODO: configure
+
+type nodeInfo struct {
+	name string
+	addr string
+}
+
 func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath string) error {
+	// config routine
+
+	slog.Info("init k8s config")
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		config, err = clientcmd.BuildConfigFromFlags("", clientcmd.RecommendedHomeFile)
@@ -37,32 +43,68 @@ func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath str
 		}
 	}
 
+	slog.Info("init k8s client")
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return err
 	}
 
-	podName, err := createHelperPod(ctx, client, namespace, pvc, mountPath)
+	// node
+
+	slog.Info("fetching target node to schedule pod on")
+	node, err := getNodeInfo(ctx, client, namespace, pvc)
 	if err != nil {
 		return err
 	}
+
+	// pod
+
+	slog.Info("creating pod")
+	err = createHelperPod(ctx, client, namespace, pvc, mountPath, node.name)
+	if err != nil {
+		return err
+	}
+	slog.Info("pod created", slog.String("name", objName))
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := deleteHelperPod(cleanupCtx, client, namespace, podName); err != nil {
-			slog.Error("cannot delete helper pod", slog.Any("err", err))
+		if err := deleteHelperPod(cleanupCtx, client, namespace); err != nil {
+			slog.Error("cannot delete pod", slog.Any("err", err))
+		} else {
+			slog.Info("pod deleted", slog.String("name", objName))
+		}
+	}()
+
+	// service
+
+	slog.Info("creating service")
+	port, err := createNodePortService(ctx, client, namespace)
+	if err != nil {
+		return err
+	}
+	slog.Info("service created",
+		slog.String("name", objName),
+		slog.Int64("port", int64(port)),
+	)
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := deleteHelperService(cleanupCtx, client, namespace, objName); err != nil {
+			slog.Error("cannot delete service", slog.Any("err", err))
+		} else {
+			slog.Info("service deleted", slog.String("name", objName))
 		}
 	}()
 
 	switch mode {
 	case "upload":
-		return streamUploadExecAPI(ctx, config, client, podName, helperContainer, namespace,
+		return pipe.Upload(node.addr, int(port),
 			filepath.ToSlash(local),
 			filepath.ToSlash(remote),
 			filepath.ToSlash(mountPath),
 		)
 	case "download":
-		return streamDownloadExecAPI(ctx, config, client, podName, helperContainer, namespace,
+		return pipe.Download(node.addr, int(port),
 			filepath.ToSlash(remote),
 			filepath.ToSlash(local),
 			filepath.ToSlash(mountPath),
@@ -72,32 +114,40 @@ func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath str
 	}
 }
 
-func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace, pvc, mountPath string) (string, error) {
-	pvcNodeName, err := getPVCNodeName(ctx, client, namespace, pvc)
-	if err != nil {
-		return "", err
-	}
+// objects
 
-	podName := "syncpod-helper-" + randString(7)
+func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace, pvc, mountPath, pvcNodeName string) error {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      podName,
+			Name:      objName,
 			Namespace: namespace,
+			Labels:    labels(),
 		},
 		Spec: corev1.PodSpec{
 			NodeName:              pvcNodeName,
-			ActiveDeadlineSeconds: pointerToInt64(86400 / 2), // TODO: configure
+			ActiveDeadlineSeconds: &activeDeadlineSeconds,
 			RestartPolicy:         corev1.RestartPolicyNever,
 			Containers: []corev1.Container{
 				{
-					Name:    helperContainer,
-					Image:   helperImage,
-					Command: []string{"sleep", "infinity"},
-					// Command: []string{"tail", "-f", "/dev/null"},
+					Name:  objName,
+					Image: helperImage,
+					Command: []string{"sh", "-c", `
+  apk update && apk add openssh &&
+  echo "root:root" | chpasswd &&
+  echo "PermitRootLogin yes" >> /etc/ssh/sshd_config &&
+  ssh-keygen -A &&
+  /usr/sbin/sshd -D -p 2525
+`},
+
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "data",
 							MountPath: mountPath,
+						},
+					},
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: 2525,
 						},
 					},
 				},
@@ -114,15 +164,15 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 			},
 		},
 	}
-	_, err = client.CoreV1().Pods(namespace).Create(ctx, pod, metav1.CreateOptions{})
+	_, err := client.CoreV1().Pods(namespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	for {
-		p, err := client.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+		p, err := client.CoreV1().Pods(namespace).Get(ctx, objName, metav1.GetOptions{})
 		if err != nil {
-			return "", err
+			return err
 		}
 		if p.Status.Phase == corev1.PodRunning {
 			break
@@ -130,16 +180,108 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 		time.Sleep(1 * time.Second)
 	}
 
-	return podName, nil
+	return nil
 }
 
-func deleteHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace, name string) error {
-	err := client.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+func createNodePortService(ctx context.Context, client *kubernetes.Clientset, namespace string) (int32, error) {
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      objName,
+			Namespace: namespace,
+			Labels:    labels(),
+		},
+		Spec: corev1.ServiceSpec{
+			Type:     corev1.ServiceTypeNodePort,
+			Selector: labels(),
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "ssh",
+					Port:       2525,                                                      // Exposed port
+					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: int32(2525)}, // Inside container
+					Protocol:   corev1.ProtocolTCP,
+				},
+			},
+		},
+	}
+
+	_, err := client.CoreV1().Services(namespace).Create(ctx, svc, metav1.CreateOptions{})
+	if err != nil {
+		return -1, fmt.Errorf("create service: %w", err)
+	}
+
+	svcCreated, err := client.CoreV1().Services(namespace).Get(ctx, objName, metav1.GetOptions{})
+	if err != nil {
+		return -1, err
+	}
+	if len(svcCreated.Spec.Ports) == 0 {
+		return -1, fmt.Errorf("cannot expose service")
+	}
+	nodePort := svcCreated.Spec.Ports[0].NodePort
+	return nodePort, nil
+}
+
+// cleanup
+
+func deleteHelperService(ctx context.Context, client *kubernetes.Clientset, namespace, name string) error {
+	err := client.CoreV1().Services(namespace).Delete(ctx, name, metav1.DeleteOptions{})
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
-	slog.Info("helper pod deleted", slog.String("name", name))
 	return nil
+}
+
+func deleteHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace string) error {
+	err := client.CoreV1().Pods(namespace).Delete(ctx, objName, metav1.DeleteOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+	return nil
+}
+
+// node
+
+func getNodeInfo(ctx context.Context, client *kubernetes.Clientset, namespace, pvc string) (*nodeInfo, error) {
+	// get node name
+	pvcNodeName, err := getPVCNodeName(ctx, client, namespace, pvc)
+	if err != nil {
+		return nil, err
+	}
+
+	// get node IP addr
+	node, err := client.CoreV1().Nodes().Get(ctx, pvcNodeName, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	addresses := node.Status.Addresses
+	if len(addresses) == 0 {
+		return nil, fmt.Errorf("cannot decide node IP: %s", pvcNodeName)
+	}
+	var nodeAddr string
+	for _, addr := range addresses {
+		if addr.Type == corev1.NodeInternalIP {
+			nodeAddr = addr.Address
+		}
+	}
+	if nodeAddr == "" {
+		for _, addr := range addresses {
+			if addr.Type == corev1.NodeHostName {
+				nodeAddr = addr.Address
+			}
+		}
+	}
+	if nodeAddr == "" {
+		return nil, fmt.Errorf("cannot decide node IP: %s", pvcNodeName)
+	}
+
+	slog.Info("decided node",
+		slog.String("addr", nodeAddr),
+		slog.String("name", pvcNodeName),
+	)
+
+	return &nodeInfo{
+		name: pvcNodeName,
+		addr: nodeAddr,
+	}, nil
 }
 
 func getPVCNodeName(ctx context.Context, client *kubernetes.Clientset, namespace, pvcName string) (string, error) {
@@ -190,263 +332,10 @@ func getPVCNodeName(ctx context.Context, client *kubernetes.Clientset, namespace
 	return "", fmt.Errorf("unable to determine node for PVC %q", pvcName)
 }
 
-func randString(n int) string {
-	letters := []rune("abcdefghijklmnopqrstuvwxyz")
-	s := make([]rune, n)
-	for i := range s {
-		//nolint:gosec
-		s[i] = letters[rand.Intn(len(letters))]
+// utils
+
+func labels() map[string]string {
+	return map[string]string{
+		"app": objName,
 	}
-	return string(s)
-}
-
-func pointerToInt64(i int64) *int64 {
-	return &i
-}
-
-/////// download ///////
-
-func streamDownloadExecAPI(
-	ctx context.Context,
-	config *rest.Config,
-	clientset *kubernetes.Clientset,
-	pod, container, namespace, remote, local, mountPath string,
-) error {
-	remotePath := filepath.ToSlash(filepath.Join(mountPath, filepath.Clean(remote)))
-	local = filepath.ToSlash(filepath.Clean(local))
-
-	cmd := []string{"tar", "czf", "-", "-C", filepath.ToSlash(filepath.Dir(remotePath)), filepath.Base(remotePath)}
-
-	req := clientset.CoreV1().RESTClient().Post().
-		Resource("pods").
-		Name(pod).
-		Namespace(namespace).
-		SubResource("exec").
-		VersionedParams(&corev1.PodExecOptions{
-			Container: container,
-			Command:   cmd,
-			Stdout:    true,
-			Stderr:    true,
-			Stdin:     false,
-			TTY:       false,
-		}, scheme.ParameterCodec)
-
-	exec, err := remotecommand.NewSPDYExecutor(config, "POST", req.URL())
-	if err != nil {
-		return fmt.Errorf("create executor: %w", err)
-	}
-
-	pr, pw := io.Pipe()
-	done := make(chan error, 1)
-
-	go func() {
-		defer pr.Close()
-
-		gr, err := gzip.NewReader(pr)
-		if err != nil {
-			done <- fmt.Errorf("create gzip reader: %w", err)
-			return
-		}
-		defer gr.Close()
-
-		tr := tar.NewReader(gr)
-
-		for {
-			select {
-			case <-ctx.Done():
-				done <- fmt.Errorf("context cancelled while extracting")
-				return
-			default:
-				// non-blocking ctx check, continue reading
-			}
-
-			header, err := tr.Next()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				done <- fmt.Errorf("read tar stream: %w", err)
-				return
-			}
-
-			target := filepath.Join(local, header.Name)
-			switch header.Typeflag {
-			case tar.TypeDir:
-				if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
-					done <- fmt.Errorf("mkdir %s: %w", target, err)
-					return
-				}
-			case tar.TypeReg:
-				if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-					done <- fmt.Errorf("mkdir parent: %w", err)
-					return
-				}
-				out, err := os.Create(target)
-				if err != nil {
-					done <- fmt.Errorf("create file: %w", err)
-					return
-				}
-				if _, err := io.Copy(out, tr); err != nil {
-					out.Close()
-					done <- fmt.Errorf("write file: %w", err)
-					return
-				}
-				out.Close()
-				if err := os.Chmod(target, os.FileMode(header.Mode)); err != nil {
-					done <- fmt.Errorf("chmod: %w", err)
-					return
-				}
-			default:
-				continue
-			}
-		}
-		done <- nil
-	}()
-
-	err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
-		Stdout: pw,
-		Stderr: os.Stderr,
-	})
-	pw.Close()
-
-	if err != nil {
-		return fmt.Errorf("remote tar exec failed: %w", err)
-	}
-	if err := <-done; err != nil {
-		return fmt.Errorf("untar failed: %w", err)
-	}
-
-	return nil
-}
-
-/////// upload ///////
-
-func streamUploadExecAPI(
-	ctx context.Context,
-	config *rest.Config,
-	clientset *kubernetes.Clientset,
-	pod, container, namespace, local, remote, mountPath string,
-) error {
-	local = filepath.Clean(local)
-	remotePath := filepath.ToSlash(filepath.Join(mountPath, filepath.Clean(remote)))
-
-	info, err := os.Stat(local)
-	if err != nil {
-		return fmt.Errorf("stat local path: %w", err)
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("local path must be a directory: %s", local)
-	}
-	base := filepath.Base(local)
-
-	cmd := []string{"tar", "xzf", "-", "-C", remotePath}
-	req := clientset.CoreV1().RESTClient().Post().
-		Resource("pods").
-		Name(pod).
-		Namespace(namespace).
-		SubResource("exec").
-		VersionedParams(&corev1.PodExecOptions{
-			Container: container,
-			Command:   cmd,
-			Stdin:     true,
-			Stdout:    true,
-			Stderr:    true,
-			TTY:       false,
-		}, scheme.ParameterCodec)
-
-	exec, err := remotecommand.NewSPDYExecutor(config, "POST", req.URL())
-	if err != nil {
-		return fmt.Errorf("create executor: %w", err)
-	}
-
-	pr, pw := io.Pipe()
-	done := make(chan error, 1)
-
-	go func() {
-		defer pw.Close()
-		gw := gzip.NewWriter(pw)
-		tw := tar.NewWriter(gw)
-
-		err := filepath.WalkDir(local, func(path string, d os.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			rel, err := filepath.Rel(local, path)
-			if err != nil {
-				return err
-			}
-			rel = filepath.ToSlash(filepath.Join(base, rel)) // preserve top-level dir
-
-			if rel == base {
-				// Emit top-level directory explicitly
-				info, err := d.Info()
-				if err != nil {
-					return err
-				}
-				hdr, err := tar.FileInfoHeader(info, "")
-				if err != nil {
-					return err
-				}
-				hdr.Name = rel
-				return tw.WriteHeader(hdr)
-			}
-
-			info, err := d.Info()
-			if err != nil {
-				return err
-			}
-			hdr, err := tar.FileInfoHeader(info, "")
-			if err != nil {
-				return err
-			}
-			hdr.Name = rel
-
-			if err := tw.WriteHeader(hdr); err != nil {
-				return err
-			}
-
-			if info.Mode().IsRegular() {
-				f, err := os.Open(path)
-				if err != nil {
-					return err
-				}
-				defer f.Close()
-
-				if _, err := io.Copy(tw, f); err != nil {
-					return err
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			done <- fmt.Errorf("walk and write tar: %w", err)
-			return
-		}
-
-		if err := tw.Close(); err != nil {
-			done <- fmt.Errorf("close tar: %w", err)
-			return
-		}
-		if err := gw.Close(); err != nil {
-			done <- fmt.Errorf("close gzip: %w", err)
-			return
-		}
-		done <- nil
-	}()
-
-	err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
-		Stdin:  pr,
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
-	})
-	pr.Close()
-
-	if err != nil {
-		return fmt.Errorf("remote tar exec failed: %w", err)
-	}
-	if err := <-done; err != nil {
-		return fmt.Errorf("tar stream write failed: %w", err)
-	}
-
-	return nil
 }

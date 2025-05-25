@@ -3,7 +3,9 @@ module github.com/hashmap-kz/kubectl-syncpod
 go 1.24.1
 
 require (
+	github.com/pkg/sftp v1.13.9
 	github.com/spf13/cobra v1.9.1
+	golang.org/x/crypto v0.38.0
 	k8s.io/api v0.33.1
 	k8s.io/apimachinery v0.33.1
 	k8s.io/cli-runtime v0.33.1
@@ -32,6 +34,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/kr/fs v0.1.0 // indirect
 	github.com/liggitt/tabwriter v0.0.0-20181228230101-89fcab3d43de // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/moby/spdystream v0.5.0 // indirect

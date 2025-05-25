@@ -1,0 +1,43 @@
+apiVersion: krew.googlecontainertools.github.com/v1alpha2
+kind: Plugin
+metadata:
+  name: apidocs
+spec:
+  version: {{ .TagName }}
+  homepage: https://github.com/hashmap-kz/kubectl-syncpod
+  shortDescription: Move Files In and Out of PVCs Safely and Quickly
+  description: |
+    Small utility that mounts PVCs using a temporary helper pod 
+    and transfers files via high-performance SFTP, without impacting 
+    application containers or requiring in-container tools.
+  platforms:
+  - selector:
+      matchLabels:
+        os: darwin
+        arch: amd64
+    {{addURIAndSha "https://github.com/hashmap-kz/kubectl-syncpod/releases/download/{{ .TagName }}/kubectl-syncpod_{{ .TagName }}_darwin_amd64.tar.gz" .TagName }}
+    bin: kubectl-syncpod
+  - selector:
+      matchLabels:
+        os: darwin
+        arch: arm64
+    {{addURIAndSha "https://github.com/hashmap-kz/kubectl-syncpod/releases/download/{{ .TagName }}/kubectl-syncpod_{{ .TagName }}_darwin_arm64.tar.gz" .TagName }}
+    bin: kubectl-syncpod
+  - selector:
+      matchLabels:
+        os: linux
+        arch: amd64
+    {{addURIAndSha "https://github.com/hashmap-kz/kubectl-syncpod/releases/download/{{ .TagName }}/kubectl-syncpod_{{ .TagName }}_linux_amd64.tar.gz" .TagName }}
+    bin: kubectl-syncpod
+  - selector:
+      matchLabels:
+        os: linux
+        arch: arm64
+    {{addURIAndSha "https://github.com/hashmap-kz/kubectl-syncpod/releases/download/{{ .TagName }}/kubectl-syncpod_{{ .TagName }}_linux_arm64.tar.gz" .TagName }}
+    bin: kubectl-syncpod
+  - selector:
+      matchLabels:
+        os: windows
+        arch: amd64
+    {{addURIAndSha "https://github.com/hashmap-kz/kubectl-syncpod/releases/download/{{ .TagName }}/kubectl-syncpod_{{ .TagName }}_windows_amd64.tar.gz" .TagName }}
+    bin: kubectl-syncpod.exe

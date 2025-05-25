@@ -1,0 +1,162 @@
+package pipe
+
+import (
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/hashmap-kz/kubectl-syncpod/internal/clients"
+
+	"github.com/pkg/sftp"
+)
+
+const (
+	sshWaitTimeout = 30 * time.Second
+)
+
+type downloadJob struct {
+	RemotePath string
+	LocalPath  string
+}
+
+func Download(host string, port int, remote, local, mountPath string) error {
+	slog.Info("waiting while SSHD is ready")
+	if err := waitForSSHReady(host, port, sshWaitTimeout); err != nil {
+		return err
+	}
+
+	slog.Info("init SSH client")
+	client, err := newSFTPClient(host, port)
+	if err != nil {
+		return err
+	}
+	defer func(client *clients.SFTPClient) {
+		err := client.Close()
+		if err != nil {
+			slog.Error("error closing SFTP client", slog.Any("err", err))
+		} else {
+			slog.Info("SFTP connection closed")
+		}
+	}(client)
+
+	remotePath := filepath.ToSlash(filepath.Join(mountPath, filepath.Clean(remote)))
+	local = filepath.ToSlash(filepath.Clean(local))
+
+	slog.Info("begin to download files", slog.String("remote", remotePath), slog.String("local", local))
+	err = downloadRecursive(client.SFTPClient(), remotePath, local)
+	if err != nil {
+		slog.Error("error while downloading files", slog.Any("err", err))
+	} else {
+		slog.Info("download job completed successfully")
+	}
+	return err
+}
+
+func waitForSSHReady(host string, port int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		client, err := newSFTPClient(host, port)
+		if err == nil {
+			return client.Close()
+		}
+	}
+	return fmt.Errorf("sshd not ready on %s:%d after %v", host, port, timeout)
+}
+
+func newSFTPClient(host string, port int) (*clients.SFTPClient, error) {
+	return clients.NewSFTPClient(&clients.SFTPConfig{
+		Host: host,
+		Port: port,
+		User: "root",
+		Pass: "root",
+	})
+}
+
+func downloadRecursive(client *sftp.Client, remotePath, localPath string) error {
+	const workerCount = 4
+	jobs := make(chan downloadJob, 64)
+	errCh := make(chan error, 1)
+	var wg sync.WaitGroup
+
+	// Start worker pool
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range jobs {
+				if err := downloadFile(client, job.RemotePath, job.LocalPath); err != nil {
+					select {
+					case errCh <- err:
+					default:
+					}
+					return
+				}
+				slog.Debug("download",
+					slog.String("remote", filepath.ToSlash(job.RemotePath)),
+					slog.String("local", filepath.ToSlash(job.LocalPath)),
+				)
+			}
+		}()
+	}
+
+	// Walk the SFTP tree
+	walker := client.Walk(remotePath)
+	for walker.Step() {
+		if err := walker.Err(); err != nil {
+			return err
+		}
+		relPath, _ := filepath.Rel(remotePath, walker.Path())
+		localFilePath := filepath.Join(localPath, relPath)
+
+		if walker.Stat().IsDir() {
+			if err := os.MkdirAll(localFilePath, 0o755); err != nil {
+				return fmt.Errorf("mkdir %s: %w", localFilePath, err)
+			}
+			continue
+		}
+
+		select {
+		case jobs <- downloadJob{RemotePath: walker.Path(), LocalPath: localFilePath}:
+		case err := <-errCh:
+			close(jobs)
+			return err
+		}
+	}
+
+	close(jobs)
+	wg.Wait()
+
+	select {
+	case err := <-errCh:
+		return err
+	default:
+		return nil
+	}
+}
+
+func downloadFile(client *sftp.Client, remotePath, localPath string) error {
+	srcFile, err := client.Open(remotePath)
+	if err != nil {
+		return fmt.Errorf("open remote: %w", err)
+	}
+	defer srcFile.Close()
+
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+		return fmt.Errorf("mkdir for file: %w", err)
+	}
+
+	dstFile, err := os.Create(localPath)
+	if err != nil {
+		return fmt.Errorf("create local: %w", err)
+	}
+	defer dstFile.Close()
+
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		return fmt.Errorf("copy file: %w", err)
+	}
+	return nil
+}

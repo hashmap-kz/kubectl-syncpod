@@ -13,17 +13,19 @@ go run main.go upload --namespace vault --pvc postgresql --mount-path=/var/lib/p
 
 ## 🔍 Comparison Table
 
-| Feature                                   | `kubectl cp`                    | `kubectl exec`          | `kubectl-syncpod`                |
-|-------------------------------------------|---------------------------------|-------------------------|----------------------------------|
-| Uses sidecar or helper pod                | ❌                               | ❌                       | ✅                                |
-| Works with PVCs                           | ⚠️ Only if mounted in container | ⚠️ Manual path required | ✅ Injects helper pod with volume |
-| Requires tools in container (`tar`, `sh`) | ✅                               | ✅                       | ❌ (runs tools in helper pod)     |
-| Supports readOnlyRootFilesystem pods      | ❌                               | ❌                       | ✅                                |
-| Works on `distroless`/`scratch` images    | ❌                               | ❌                       | ✅                                |
-| Affects main application container        | ✅                               | ✅                       | ❌                                |
-| Requires container to run as root         | Often yes                       | Often yes               | ❌ (helper pod runs separately)   |
-| Safe for production workloads             | ⚠️ Risky                        | ⚠️ Risky                | ✅                                |
-| Auto-cleans after sync                    | ❌                               | ❌                       | ✅ (optional)                     |
+| Feature                                   | `kubectl cp`                    | `kubectl exec`          | `kubectl-syncpod` (SFTP mode)         |
+|-------------------------------------------|---------------------------------|-------------------------|---------------------------------------|
+| Uses sidecar or helper pod                | ❌                               | ❌                       | ✅                                     |
+| Works with PVCs                           | ⚠️ Only if mounted in container | ⚠️ Manual path required | ✅ Helper pod mounts PVC               |
+| Requires tools in container (`tar`, `sh`) | ✅                               | ✅                       | ❌ (uses `sshd` in helper pod)         |
+| Supports `readOnlyRootFilesystem` pods    | ❌                               | ❌                       | ✅                                     |
+| Works on `distroless`/`scratch` images    | ❌                               | ❌                       | ✅                                     |
+| Affects main application container        | ✅                               | ✅                       | ❌                                     |
+| Requires container to run as root         | Often yes                       | Often yes               | ❌ or configurable via helper pod spec |
+| Safe for production workloads             | ⚠️ Risky                        | ⚠️ Risky                | ✅ (safe for read)                     |
+| Auto-cleans after sync                    | ❌                               | ❌                       | ✅                                     |
+| Supports concurrent transfers             | ❌                               | ❌                       | ✅ (parallel SFTP workers)             |
+| Performance on large file trees           | 🐢 Slow                         | 🐢 Slow                 | 🚀 Fast (streaming + concurrency)     |
 
 ### 🚀 When to Use This Plugin
 

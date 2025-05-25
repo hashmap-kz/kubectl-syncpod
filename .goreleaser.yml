@@ -1,0 +1,60 @@
+version: 2
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: kubectl-syncpod
+    main: main.go
+    binary: kubectl-syncpod
+    ldflags:
+      - -s -w
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+checksum:
+  name_template: checksums.txt
+
+archives:
+  - builds:
+      - kubectl-syncpod
+    name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+    wrap_in_directory: "false"
+    formats: ["tar.gz"]
+    files:
+      - LICENSE
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+brews:
+  - name: kubectl-syncpod
+    repository:
+      owner: hashmap-kz
+      name: homebrew-tap
+      branch: main
+    commit_author:
+      name: alexey.zh
+      email: mailbox.stdio@gmail.com
+    homepage: https://github.com/hashmap-kz/homebrew-tap
+    description: "Move Files In and Out of PVCs Safely and Quickly"
+    license: "Apache-2.0"
+    install: |
+      bin.install "kubectl-syncpod"
+    test: |
+      system "#{bin}/kubectl-syncpod"
