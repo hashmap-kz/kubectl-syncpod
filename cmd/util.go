@@ -31,6 +31,10 @@ const (
 	helperContainer = "helper"
 	helperImage     = "alpine"
 	helperService   = "syncpod-sshd"
+
+	// TODO: nodeIP + nodePort
+	host = "10.40.240.165"
+	port = 30154
 )
 
 func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath string) error {
@@ -79,7 +83,12 @@ func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath str
 			filepath.ToSlash(mountPath),
 		)
 	case "download":
-		return streamDownloadExecAPI(ctx, config, client, podName, helperContainer, namespace,
+		//return streamDownloadExecAPI(ctx, config, client, podName, helperContainer, namespace,
+		//	filepath.ToSlash(remote),
+		//	filepath.ToSlash(local),
+		//	filepath.ToSlash(mountPath),
+		//)
+		return streamDownloadExecAPI(
 			filepath.ToSlash(remote),
 			filepath.ToSlash(local),
 			filepath.ToSlash(mountPath),
@@ -159,7 +168,6 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 		time.Sleep(1 * time.Second)
 	}
 
-	time.Sleep(10 * time.Second) // TODO: sshd is ready
 	return podName, nil
 }
 
@@ -290,13 +298,24 @@ func pointerToInt64(i int64) *int64 {
 
 /////// download ///////
 
-func streamDownloadExecAPI(
-	ctx context.Context,
-	config *rest.Config,
-	clientset *kubernetes.Clientset,
-	pod, container, ns, remote, local, mountPath string,
-) error {
-	client, err := clients.NewSSHClient("10.40.240.165", 30154, "root", "root", "", "")
+func waitForSSHReady(timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		client, err := clients.NewSSHClient(host, port, "root", "root", "", "")
+		if err == nil {
+			client.Close()
+			return nil
+		}
+	}
+	return fmt.Errorf("sshd not ready on %s:%d after %v", host, port, timeout)
+}
+
+func streamDownloadExecAPI(remote, local, mountPath string) error {
+	if err := waitForSSHReady(30 * time.Second); err != nil {
+		return err
+	}
+
+	client, err := clients.NewSSHClient(host, port, "root", "root", "", "")
 	if err != nil {
 		return err
 	}
