@@ -1,0 +1,60 @@
+// download-v1
+
+func streamDownload0(pod, container, ns, remote, local, mountPath string) error {
+	cmd := exec.Command("kubectl", "exec", "-i", pod, "-c", container, "-n", ns,
+		"--", "tar", "czf", "-", "-C", filepath.Join(mountPath, remote), ".")
+	tarCmd := exec.Command("tar", "xzf", "-", "-C", local)
+	pipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	tarCmd.Stdin = pipe
+
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	if err := tarCmd.Run(); err != nil {
+		return err
+	}
+	return cmd.Wait()
+}
+
+// download-v2
+
+func streamDownload1(pod, container, ns, remote, local, mountPath string) error {
+	remotePath := filepath.ToSlash(filepath.Join(mountPath, filepath.Clean(remote)))
+	local = filepath.ToSlash(filepath.Clean(local))
+
+	cmd := exec.Command("kubectl", "exec", "-i", pod, "-c", container, "-n", ns,
+		"--", "tar", "czf", "-", "-C", remotePath, ".")
+	tarCmd := exec.Command("tar", "xzf", "-", "-C", local)
+
+	// Debug: print command args
+	fmt.Println("Running:", cmd.String(), "| tar xzf - -C", local)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("get stdout pipe: %w", err)
+	}
+	tarCmd.Stdin = stdout
+
+	// Capture stderr
+	cmd.Stderr = os.Stderr
+	tarCmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start kubectl exec: %w", err)
+	}
+	if err := tarCmd.Start(); err != nil {
+		return fmt.Errorf("start tar: %w", err)
+	}
+
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("kubectl exec failed: %w", err)
+	}
+	if err := tarCmd.Wait(); err != nil {
+		return fmt.Errorf("tar extract failed: %w", err)
+	}
+
+	return nil
+}
