@@ -1,13 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"flag"
 
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 )
 
-func NewRootCmd(streams genericiooptions.IOStreams) *cobra.Command {
+func NewRootCmd(ctx context.Context, streams genericiooptions.IOStreams) *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:          "kubectl syncpod",
 		Short:        "Download/Upload files from a PVC via temporary pod",
@@ -21,7 +22,7 @@ func NewRootCmd(streams genericiooptions.IOStreams) *cobra.Command {
 	})
 
 	rootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
-	rootCmd.AddCommand(newDownloadCmd(streams))
-	rootCmd.AddCommand(newUploadCmd(streams))
+	rootCmd.AddCommand(newDownloadCmd(ctx, streams))
+	rootCmd.AddCommand(newUploadCmd(ctx, streams))
 	return rootCmd
 }

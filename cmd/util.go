@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/errors"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -44,7 +46,13 @@ func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath str
 	if err != nil {
 		return err
 	}
-	defer deleteHelperPod(ctx, client, namespace, podName)
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := deleteHelperPod(cleanupCtx, client, namespace, podName); err != nil {
+			slog.Error("cannot delete helper pod", slog.Any("err", err))
+		}
+	}()
 
 	switch mode {
 	case "upload":
@@ -125,11 +133,13 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 	return podName, nil
 }
 
-func deleteHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace, name string) {
+func deleteHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace, name string) error {
 	err := client.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{})
-	if err != nil {
-		slog.Error("cannot delete helper pod", slog.Any("err", err))
+	if err != nil && !errors.IsNotFound(err) {
+		return err
 	}
+	slog.Info("helper pod deleted", slog.String("name", name))
+	return nil
 }
 
 func getPVCNodeName(ctx context.Context, client *kubernetes.Clientset, namespace, pvcName string) (string, error) {

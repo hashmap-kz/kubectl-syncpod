@@ -20,7 +20,7 @@ type downloadRunOpts struct {
 	args        []string
 }
 
-func newDownloadCmd(streams genericiooptions.IOStreams) *cobra.Command {
+func newDownloadCmd(ctx context.Context, streams genericiooptions.IOStreams) *cobra.Command {
 	opts := genericclioptions.NewConfigFlags(true)
 	downloadOptions := DownloadOptions{}
 	cmd := &cobra.Command{
@@ -29,7 +29,7 @@ func newDownloadCmd(streams genericiooptions.IOStreams) *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDownload(cmd.Context(), &downloadRunOpts{
+			return runDownload(ctx, &downloadRunOpts{
 				configFlags: opts,
 				streams:     streams,
 				opts:        downloadOptions,

@@ -20,7 +20,7 @@ type uploadRunOpts struct {
 	args        []string
 }
 
-func newUploadCmd(streams genericiooptions.IOStreams) *cobra.Command {
+func newUploadCmd(ctx context.Context, streams genericiooptions.IOStreams) *cobra.Command {
 	opts := genericclioptions.NewConfigFlags(true)
 	uploadOptions := UploadOptions{}
 	cmd := &cobra.Command{
@@ -29,7 +29,7 @@ func newUploadCmd(streams genericiooptions.IOStreams) *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUpload(cmd.Context(), &uploadRunOpts{
+			return runUpload(ctx, &uploadRunOpts{
 				configFlags: opts,
 				streams:     streams,
 				opts:        uploadOptions,
