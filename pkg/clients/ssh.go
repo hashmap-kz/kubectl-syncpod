@@ -5,8 +5,77 @@ import (
 	"net"
 	"os"
 
+	"github.com/pkg/sftp"
+
 	"golang.org/x/crypto/ssh"
 )
+
+type SFTPConfig struct {
+	Host string
+	Port int
+	User string
+	Pass string
+
+	PkeyPath string
+	PkeyPass string // Optional, it private key is created with a passphrase
+}
+
+type SFTPClient struct {
+	sshClient  *ssh.Client
+	sftpClient *sftp.Client
+	config     *SFTPConfig
+}
+
+func NewSFTPClient(cfg *SFTPConfig) (*SFTPClient, error) {
+	authMethods, err := getAuthsMethods(cfg.Pass, cfg.PkeyPath, cfg.PkeyPass)
+	if err != nil {
+		return nil, err
+	}
+
+	config := &ssh.ClientConfig{
+		User:            cfg.User,
+		Auth:            authMethods,
+		HostKeyCallback: func(string, net.Addr, ssh.PublicKey) error { return nil },
+	}
+
+	sshClient, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", cfg.Host, cfg.Port), config)
+	if sshClient == nil || err != nil {
+		return nil, err
+	}
+
+	_, _, err = sshClient.SendRequest(fmt.Sprintf("%s@%s", cfg.User, cfg.Host), true, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	sftpClient, err := sftp.NewClient(sshClient)
+	if err != nil {
+		return nil, err
+	}
+
+	return &SFTPClient{
+		sshClient:  sshClient,
+		sftpClient: sftpClient,
+		config:     nil,
+	}, nil
+}
+
+func (s *SFTPClient) SFTPClient() *sftp.Client {
+	return s.sftpClient
+}
+
+func (s *SFTPClient) Close() error {
+	var err error
+	if s.sftpClient != nil {
+		err = s.sftpClient.Close()
+	}
+	if s.sshClient != nil {
+		err = s.sshClient.Close()
+	}
+	return err
+}
+
+// internal
 
 func isPasswordProtectedPrivateKey(key []byte) bool {
 	_, err := ssh.ParsePrivateKey(key)
@@ -51,29 +120,4 @@ func getAuthsMethods(password string, privateKeyFilename string, privateKeyPassp
 	}
 
 	return auths, nil
-}
-
-func NewSSHClient(host string, port int, user string, password string, privateKeyFilename string, privateKeyPassphrase string) (*ssh.Client, error) {
-	authMethods, err := getAuthsMethods(password, privateKeyFilename, privateKeyPassphrase)
-	if err != nil {
-		return nil, err
-	}
-
-	config := &ssh.ClientConfig{
-		User:            user,
-		Auth:            authMethods,
-		HostKeyCallback: func(string, net.Addr, ssh.PublicKey) error { return nil },
-	}
-
-	client, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", host, port), config)
-	if client == nil || err != nil {
-		return nil, err
-	}
-
-	_, _, err = client.SendRequest(fmt.Sprintf("%s@%s", user, host), true, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return client, nil
 }
