@@ -9,7 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashmap-kz/kubectl-syncpod/pkg/clients"
+	"github.com/hashmap-kz/kubectl-syncpod/internal/clients"
+
 	"github.com/pkg/sftp"
 )
 
