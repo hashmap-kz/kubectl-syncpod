@@ -44,6 +44,11 @@ func Download(host string, port int, remote, local, mountPath string) error {
 
 	slog.Info("begin to download files", slog.String("remote", remotePath), slog.String("local", local))
 	err = downloadRecursive(sfptClient, remotePath, local)
+	if err != nil {
+		slog.Error("error while downloading files", slog.Any("err", err))
+	} else {
+		slog.Info("download job completed successfully")
+	}
 	return err
 }
 
