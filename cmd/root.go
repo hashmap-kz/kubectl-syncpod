@@ -18,7 +18,7 @@ func NewRootCmd(ctx context.Context, streams genericiooptions.IOStreams) *cobra.
 		PersistentPreRun: func(_ *cobra.Command, _ []string) {
 			// TODO: --log-level, etc...
 			logger.Init(&logger.Opts{
-				Level:     "info",
+				Level:     "debug",
 				Format:    "text",
 				AddSource: false,
 			})
