@@ -1,6 +1,7 @@
 package pipe
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -21,16 +22,26 @@ const (
 type downloadJob struct {
 	RemotePath string
 	LocalPath  string
+	IsDir      bool
 }
 
-func Download(host string, port int, remote, local, mountPath string) error {
+type DownloadJobOpts struct {
+	Host      string
+	Port      int
+	Remote    string
+	Local     string
+	MountPath string
+	Workers   int
+}
+
+func Download(ctx context.Context, opts *DownloadJobOpts) error {
 	slog.Info("waiting while SSHD is ready")
-	if err := waitForSSHReady(host, port, sshWaitTimeout); err != nil {
+	if err := waitForSSHReady(opts.Host, opts.Port, sshWaitTimeout); err != nil {
 		return err
 	}
 
 	slog.Info("init SSH client")
-	client, err := newSFTPClient(host, port)
+	client, err := newSFTPClient(opts.Host, opts.Port)
 	if err != nil {
 		return err
 	}
@@ -43,11 +54,16 @@ func Download(host string, port int, remote, local, mountPath string) error {
 		}
 	}(client)
 
-	remotePath := filepath.ToSlash(filepath.Join(mountPath, filepath.Clean(remote)))
-	local = filepath.ToSlash(filepath.Clean(local))
+	remotePath := filepath.ToSlash(filepath.Join(opts.MountPath, filepath.Clean(opts.Remote)))
+	local := filepath.ToSlash(filepath.Clean(opts.Local))
+
+	// ensure destination dir
+	if err := os.MkdirAll(filepath.ToSlash(local), 0o750); err != nil {
+		return err
+	}
 
 	slog.Info("begin to download files", slog.String("remote", remotePath), slog.String("local", local))
-	err = downloadFiles(client.SFTPClient(), remotePath, local)
+	err = downloadFiles(ctx, client.SFTPClient(), remotePath, local, opts.Workers)
 	if err != nil {
 		slog.Error("error while downloading files", slog.Any("err", err))
 	} else {
@@ -56,76 +72,106 @@ func Download(host string, port int, remote, local, mountPath string) error {
 	return err
 }
 
-func downloadFiles(client *sftp.Client, remotePath, localPath string) error {
-	const workerCount = 4
-	jobs := make(chan downloadJob, 64)
-	errCh := make(chan error, 1)
+func getFilesToDownload(client *sftp.Client, remotePath, localPath string) ([]downloadJob, error) {
+	var jobs []downloadJob
+
+	walker := client.Walk(remotePath)
+	for walker.Step() {
+		if err := walker.Err(); err != nil {
+			return nil, err
+		}
+
+		relPath, err := filepath.Rel(remotePath, walker.Path())
+		if err != nil {
+			return nil, err
+		}
+		localFilePath := filepath.Join(localPath, relPath)
+
+		jobs = append(jobs, downloadJob{
+			RemotePath: walker.Path(),
+			LocalPath:  localFilePath,
+			IsDir:      walker.Stat().IsDir(),
+		})
+	}
+	return jobs, nil
+}
+
+func downloadFiles(ctx context.Context, client *sftp.Client, remotePath, localPath string, workers int) error {
+	files, err := getFilesToDownload(client, remotePath, localPath)
+	if err != nil {
+		return err
+	}
+
+	if workers <= 0 {
+		workers = 1
+	}
+
+	slog.Debug("starting concurrent file download",
+		slog.Int("workers", workers),
+		slog.Int("files", len(files)),
+	)
+
+	filesChan := make(chan downloadJob, len(files))
+	errorChan := make(chan error, len(files))
 	var wg sync.WaitGroup
 
-	// Start worker pool
-	for i := 0; i < workerCount; i++ {
+	// Start worker goroutines
+	for i := 0; i < workers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for job := range jobs {
-				if err := downloadFile(client, job.RemotePath, job.LocalPath); err != nil {
-					select {
-					case errCh <- err:
-					default:
-					}
+			for jb := range filesChan {
+				if ctx.Err() != nil {
 					return
 				}
-				slog.Debug("download",
-					slog.String("remote", filepath.ToSlash(job.RemotePath)),
-					slog.String("local", filepath.ToSlash(job.LocalPath)),
-				)
+				err := downloadFile(client, jb)
+				if err != nil {
+					select {
+					case errorChan <- err:
+					default:
+					}
+				}
 			}
 		}()
 	}
 
-	// Walk the SFTP tree
-	walker := client.Walk(remotePath)
-	for walker.Step() {
-		if err := walker.Err(); err != nil {
-			return err
-		}
-		relPath, _ := filepath.Rel(remotePath, walker.Path())
-		localFilePath := filepath.Join(localPath, relPath)
-
-		if walker.Stat().IsDir() {
-			if err := os.MkdirAll(localFilePath, 0o755); err != nil {
-				return fmt.Errorf("mkdir %s: %w", localFilePath, err)
-			}
-			continue
-		}
-
-		select {
-		case jobs <- downloadJob{RemotePath: walker.Path(), LocalPath: localFilePath}:
-		case err := <-errCh:
-			close(jobs)
-			return err
-		}
+	// Send found files to worker chan
+	for _, path := range files {
+		filesChan <- path
 	}
+	close(filesChan) // Close the task channel once all tasks are submitted
 
-	close(jobs)
-	wg.Wait()
+	// Wait for all workers to finish
+	go func() {
+		wg.Wait()
+		close(errorChan)
+	}()
 
-	select {
-	case err := <-errCh:
-		return err
-	default:
-		return nil
+	var lastErr error
+	for e := range errorChan {
+		slog.Error("file download error",
+			slog.Any("err", e),
+		)
+		lastErr = e
 	}
+	return lastErr
 }
 
-func downloadFile(client *sftp.Client, remotePath, localPath string) error {
+func downloadFile(client *sftp.Client, jb downloadJob) error {
+	remotePath := filepath.ToSlash(jb.RemotePath)
+	localPath := filepath.ToSlash(jb.LocalPath)
+
+	if jb.IsDir {
+		return os.MkdirAll(localPath, 0o750)
+	}
+
 	srcFile, err := client.Open(remotePath)
 	if err != nil {
 		return fmt.Errorf("open remote: %w", err)
 	}
 	defer srcFile.Close()
 
-	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.ToSlash(filepath.Dir(localPath)), 0o750); err != nil {
 		return fmt.Errorf("mkdir for file: %w", err)
 	}
 
