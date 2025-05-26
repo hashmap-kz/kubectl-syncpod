@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/pkg/errors"
+
 	"github.com/hashmap-kz/kubectl-syncpod/internal/clients"
 	"github.com/pkg/sftp"
 )
@@ -71,6 +73,14 @@ func getFilesToUpload(client *sftp.Client, localPath, remotePath string) ([]work
 			IsDir:      isDir,
 		}
 
+		fileExists, err := remoteFileExists(client, target, isDir)
+		if err != nil {
+			return err
+		}
+		if fileExists {
+			return fmt.Errorf("override is forbidden, file already exists: %s", target)
+		}
+
 		if !isDir {
 			localHash, err := sha256LocalFile(path)
 			if err == nil {
@@ -88,6 +98,22 @@ func getFilesToUpload(client *sftp.Client, localPath, remotePath string) ([]work
 		return nil
 	})
 	return jobs, err
+}
+
+func remoteFileExists(client *sftp.Client, path string, isDir bool) (bool, error) {
+	stat, err := client.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		// to avoid false positive, we don't know whether the file exists or not:
+		// the safest way: we assume it exists
+		return true, err
+	}
+	if isDir {
+		return stat.IsDir(), nil
+	}
+	return !stat.IsDir(), nil
 }
 
 func uploadFiles(ctx context.Context, client *sftp.Client, localPath, remotePath string, workers int) error {
