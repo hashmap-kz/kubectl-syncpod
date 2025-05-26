@@ -11,7 +11,7 @@ _High-Speed File Transfer to and from Kubernetes PVCs_
 
 ---
 
-## About
+## 🚀 About
 
 - While `kubectl cp` and `kubectl exec` can both be used to copy files, performance degrades significantly when the
   target size is large (e.g., ~100Gi). In such cases, execution becomes drastically slow.
@@ -30,14 +30,27 @@ node.
 But when using CSI-backed volumes (e.g., via a cloud provider), where the PVC is mounted as a block device, the
 situation becomes more complex. In such cases, conventional tools fall short.
 
-### Another Scenario
+Also - you may want to scale your StatefulSet to zero and back up the PVC contents safely and efficiently - for local
+testing, migration, or recovery.
 
-You may want to scale your StatefulSet to zero and back up the PVC contents safely and efficiently - for local testing,
-migration, or recovery.
+### 🧱 How It Works
+
+`kubectl-syncpod` spins up a **temporary helper pod** that:
+
+- Mounts your target PVC
+- Runs an `sshd` server with an in-memory public key
+- Listens on a randomized NodePort
+- Accepts connections only via a secure, ephemeral SSH private key (never written to disk)
+
+The CLI then:
+
+- Uses an in-memory SFTP client to **recursively transfer files**
+- Skips files that are **already present and match by SHA-256**
+- Cleans up the helper pod and service automatically
 
 ---
 
-## **Installation**
+## 🚀 Installation
 
 ### Using `krew`
 
@@ -101,10 +114,22 @@ apk add kubectl-syncpod_linux_amd64.apk --allow-untrusted
 
 ```
 # Download the 'pgdata' directory from the container's '/var/lib/postgresql/data' mount to the local 'backups' directory
-kubectl syncpod download --namespace vault --pvc postgresql --mount-path=/var/lib/postgresql/data --src=pgdata --dst=backups
+# 
+kubectl syncpod download \
+  --namespace vault \
+  --pvc postgresql \
+  --mount-path=/var/lib/postgresql/data \
+  --src=pgdata \
+  --dst=backups
 
 # Upload the local 'k8s' directory to the container's '/var/lib/postgresql/data/pgdata' path
-kubectl syncpod upload --namespace vault --pvc postgresql --mount-path=/var/lib/postgresql/data --src=k8s --dst=pgdata
+#
+kubectl syncpod upload \
+  --namespace vault \
+  --pvc postgresql \
+  --mount-path=/var/lib/postgresql/data \
+  --src=k8s \
+  --dst=pgdata
 ```
 
 ---
