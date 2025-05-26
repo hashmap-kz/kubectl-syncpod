@@ -26,9 +26,10 @@ func newDownloadCmd(ctx context.Context, streams genericiooptions.IOStreams) *co
 	opts := genericclioptions.NewConfigFlags(true)
 	downloadOptions := DownloadOptions{}
 	cmd := &cobra.Command{
-		Use:          "download",
-		Short:        "Download files from a PVC via temporary pod",
-		SilenceUsage: true,
+		Use:           "download",
+		Short:         "Download files from a PVC via temporary pod",
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return runDownload(ctx, &downloadRunOpts{
 				configFlags: opts,

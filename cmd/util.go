@@ -37,13 +37,14 @@ type nodeInfo struct {
 }
 
 type RunOpts struct {
-	Mode      string
-	PVC       string
-	Namespace string
-	Remote    string
-	Local     string
-	MountPath string
-	Workers   int
+	Mode           string
+	PVC            string
+	Namespace      string
+	Remote         string
+	Local          string
+	MountPath      string
+	Workers        int
+	AllowOverwrite bool
 }
 
 func run(ctx context.Context, opts *RunOpts) error {
@@ -120,13 +121,14 @@ func run(ctx context.Context, opts *RunOpts) error {
 	}()
 
 	jobOpts := &pipe.JobOpts{
-		Host:      node.addr,
-		Port:      int(port),
-		Remote:    filepath.ToSlash(opts.Remote),
-		Local:     filepath.ToSlash(opts.Local),
-		MountPath: filepath.ToSlash(opts.MountPath),
-		Workers:   opts.Workers,
-		KeyPair:   ed25519Keys,
+		Host:           node.addr,
+		Port:           int(port),
+		Remote:         filepath.ToSlash(opts.Remote),
+		Local:          filepath.ToSlash(opts.Local),
+		MountPath:      filepath.ToSlash(opts.MountPath),
+		Workers:        opts.Workers,
+		KeyPair:        ed25519Keys,
+		AllowOverwrite: opts.AllowOverwrite,
 	}
 	switch opts.Mode {
 	case "upload":

@@ -22,13 +22,14 @@ type workerJob struct {
 }
 
 type JobOpts struct {
-	Host      string
-	Port      int
-	Local     string
-	Remote    string
-	MountPath string
-	Workers   int
-	KeyPair   *clients.KeyPair
+	Host           string
+	Port           int
+	Local          string
+	Remote         string
+	MountPath      string
+	Workers        int
+	KeyPair        *clients.KeyPair
+	AllowOverwrite bool
 }
 
 func waitForSSHReady(keyPair *clients.KeyPair, host string, port int, timeout time.Duration) error {

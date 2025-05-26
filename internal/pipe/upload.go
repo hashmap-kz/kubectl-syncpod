@@ -42,7 +42,7 @@ func Upload(ctx context.Context, opts *JobOpts) error {
 		slog.String("remote", remotePath),
 	)
 
-	err = uploadFiles(ctx, client.SFTPClient(), localPath, remotePath, opts.Workers)
+	err = uploadFiles(ctx, client.SFTPClient(), localPath, remotePath, opts.Workers, opts.AllowOverwrite)
 	if err != nil {
 		slog.Error("error while uploading files", slog.Any("err", err))
 	} else {
@@ -51,7 +51,7 @@ func Upload(ctx context.Context, opts *JobOpts) error {
 	return err
 }
 
-func getFilesToUpload(client *sftp.Client, localPath, remotePath string) ([]workerJob, error) {
+func getFilesToUpload(client *sftp.Client, localPath, remotePath string, allowOverwrite bool) ([]workerJob, error) {
 	var jobs []workerJob
 	base := filepath.Base(localPath)
 
@@ -77,8 +77,8 @@ func getFilesToUpload(client *sftp.Client, localPath, remotePath string) ([]work
 		if err != nil {
 			return err
 		}
-		if fileExists {
-			return fmt.Errorf("override is forbidden, file already exists: %s", target)
+		if fileExists && !allowOverwrite {
+			return fmt.Errorf("overwrite is forbidden, file already exists: %s", target)
 		}
 
 		if !isDir {
@@ -116,8 +116,8 @@ func remoteFileExists(client *sftp.Client, path string, isDir bool) (bool, error
 	return !stat.IsDir(), nil
 }
 
-func uploadFiles(ctx context.Context, client *sftp.Client, localPath, remotePath string, workers int) error {
-	files, err := getFilesToUpload(client, localPath, remotePath)
+func uploadFiles(ctx context.Context, client *sftp.Client, localPath, remotePath string, workers int, allowOverwrite bool) error {
+	files, err := getFilesToUpload(client, localPath, remotePath, allowOverwrite)
 	if err != nil {
 		return err
 	}

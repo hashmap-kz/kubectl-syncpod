@@ -9,11 +9,12 @@ import (
 )
 
 type UploadOptions struct {
-	MountPath string
-	PVC       string
-	Workers   int
-	Dst       string
-	Src       string
+	MountPath      string
+	PVC            string
+	Workers        int
+	Dst            string
+	Src            string
+	AllowOverwrite bool
 }
 
 type uploadRunOpts struct {
@@ -26,9 +27,10 @@ func newUploadCmd(ctx context.Context, streams genericiooptions.IOStreams) *cobr
 	opts := genericclioptions.NewConfigFlags(true)
 	uploadOptions := UploadOptions{}
 	cmd := &cobra.Command{
-		Use:          "upload",
-		Short:        "Upload local files to a PVC via temporary pod",
-		SilenceUsage: true,
+		Use:           "upload",
+		Short:         "Upload local files to a PVC via temporary pod",
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return runUpload(ctx, &uploadRunOpts{
 				configFlags: opts,
@@ -42,6 +44,7 @@ func newUploadCmd(ctx context.Context, streams genericiooptions.IOStreams) *cobr
 	cmd.Flags().IntVarP(&uploadOptions.Workers, "workers", "w", 4, "Concurrent workers")
 	cmd.Flags().StringVar(&uploadOptions.Src, "src", "", "Source")
 	cmd.Flags().StringVar(&uploadOptions.Dst, "dst", "", "Destination")
+	cmd.Flags().BoolVar(&uploadOptions.AllowOverwrite, "allow-overwrite", false, "Allow overwriting existing files")
 	for _, rf := range []string{"mount-path", "pvc", "src", "dst"} {
 		_ = cmd.MarkFlagRequired(rf)
 	}
@@ -55,12 +58,13 @@ func runUpload(ctx context.Context, opts *uploadRunOpts) error {
 		namespace = *opts.configFlags.Namespace
 	}
 	return run(ctx, &RunOpts{
-		Mode:      "upload",
-		PVC:       opts.opts.PVC,
-		Namespace: namespace,
-		Remote:    opts.opts.Dst,
-		Local:     opts.opts.Src,
-		MountPath: opts.opts.MountPath,
-		Workers:   opts.opts.Workers,
+		Mode:           "upload",
+		PVC:            opts.opts.PVC,
+		Namespace:      namespace,
+		Remote:         opts.opts.Dst,
+		Local:          opts.opts.Src,
+		MountPath:      opts.opts.MountPath,
+		Workers:        opts.opts.Workers,
+		AllowOverwrite: opts.opts.AllowOverwrite,
 	})
 }
