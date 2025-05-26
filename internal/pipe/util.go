@@ -1,14 +1,8 @@
 package pipe
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
-	"os"
 	"time"
-
-	"github.com/pkg/sftp"
 
 	"github.com/hashmap-kz/kubectl-syncpod/internal/clients"
 )
@@ -17,8 +11,6 @@ type workerJob struct {
 	LocalPath  string
 	RemotePath string
 	IsDir      bool
-	LocalHash  string
-	RemoteHash string
 }
 
 type JobOpts struct {
@@ -54,32 +46,4 @@ func newSFTPClient(keyPair *clients.KeyPair, host string, port int) (*clients.SF
 		User:      "root",
 		PkeyBytes: privateKeyToPEM,
 	})
-}
-
-// hashing
-
-func sha256File(r io.Reader) (string, error) {
-	hasher := sha256.New()
-	if _, err := io.Copy(hasher, r); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(hasher.Sum(nil)), nil
-}
-
-func sha256LocalFile(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	return sha256File(f)
-}
-
-func sha256RemoteFile(client *sftp.Client, path string) (string, error) {
-	f, err := client.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	return sha256File(f)
 }

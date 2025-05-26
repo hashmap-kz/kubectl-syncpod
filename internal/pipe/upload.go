@@ -65,13 +65,7 @@ func getFilesToUpload(client *sftp.Client, localPath, remotePath string, allowOv
 		}
 		rel = filepath.ToSlash(filepath.Join(base, rel))
 		target := filepath.ToSlash(filepath.Join(remotePath, rel))
-
 		isDir := d.IsDir()
-		job := workerJob{
-			LocalPath:  path,
-			RemotePath: target,
-			IsDir:      isDir,
-		}
 
 		fileExists, err := remoteFileExists(client, target, isDir)
 		if err != nil {
@@ -81,20 +75,11 @@ func getFilesToUpload(client *sftp.Client, localPath, remotePath string, allowOv
 			return fmt.Errorf("overwrite is forbidden, file already exists: %s", target)
 		}
 
-		if !isDir {
-			localHash, err := sha256LocalFile(path)
-			if err == nil {
-				job.LocalHash = localHash
-			}
-			remoteHash, err := sha256RemoteFile(client, target)
-			if err == nil {
-				job.RemoteHash = remoteHash
-			}
-		}
-
-		if job.IsDir || job.LocalHash != job.RemoteHash {
-			jobs = append(jobs, job)
-		}
+		jobs = append(jobs, workerJob{
+			LocalPath:  path,
+			RemotePath: target,
+			IsDir:      isDir,
+		})
 		return nil
 	})
 	return jobs, err
