@@ -24,7 +24,10 @@ const (
 	objName     = "syncpod-bab9e5b1-eaa7-4b3b-964e-103f0a4f8cc3"
 )
 
-var activeDeadlineSeconds int64 = 86400 / 2 // TODO: configure
+var (
+	activeDeadlineSeconds int64 = 86400 / 2 // TODO: configure
+	gracePeriodSeconds    int64 = 0
+)
 
 type nodeInfo struct {
 	name string
@@ -233,7 +236,9 @@ func createNodePortService(ctx context.Context, client *kubernetes.Clientset, na
 // cleanup
 
 func deleteHelperService(ctx context.Context, client *kubernetes.Clientset, namespace, name string) error {
-	err := client.CoreV1().Services(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	err := client.CoreV1().Services(namespace).Delete(ctx, name, metav1.DeleteOptions{
+		GracePeriodSeconds: &gracePeriodSeconds,
+	})
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
@@ -241,7 +246,9 @@ func deleteHelperService(ctx context.Context, client *kubernetes.Clientset, name
 }
 
 func deleteHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace string) error {
-	err := client.CoreV1().Pods(namespace).Delete(ctx, objName, metav1.DeleteOptions{})
+	err := client.CoreV1().Pods(namespace).Delete(ctx, objName, metav1.DeleteOptions{
+		GracePeriodSeconds: &gracePeriodSeconds,
+	})
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
