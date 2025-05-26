@@ -7,6 +7,21 @@ import (
 	"github.com/hashmap-kz/kubectl-syncpod/internal/clients"
 )
 
+type workerJob struct {
+	LocalPath  string
+	RemotePath string
+	IsDir      bool
+}
+
+type JobOpts struct {
+	Host      string
+	Port      int
+	Local     string
+	Remote    string
+	MountPath string
+	Workers   int
+}
+
 func waitForSSHReady(host string, port int, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {

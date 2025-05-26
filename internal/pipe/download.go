@@ -19,22 +19,7 @@ const (
 	sshWaitTimeout = 30 * time.Second
 )
 
-type downloadJob struct {
-	RemotePath string
-	LocalPath  string
-	IsDir      bool
-}
-
-type DownloadJobOpts struct {
-	Host      string
-	Port      int
-	Remote    string
-	Local     string
-	MountPath string
-	Workers   int
-}
-
-func Download(ctx context.Context, opts *DownloadJobOpts) error {
+func Download(ctx context.Context, opts *JobOpts) error {
 	slog.Info("waiting while SSHD is ready")
 	if err := waitForSSHReady(opts.Host, opts.Port, sshWaitTimeout); err != nil {
 		return err
@@ -62,7 +47,10 @@ func Download(ctx context.Context, opts *DownloadJobOpts) error {
 		return err
 	}
 
-	slog.Info("begin to download files", slog.String("remote", remotePath), slog.String("local", local))
+	slog.Info("begin to download files",
+		slog.String("remote", remotePath),
+		slog.String("local", local),
+	)
 	err = downloadFiles(ctx, client.SFTPClient(), remotePath, local, opts.Workers)
 	if err != nil {
 		slog.Error("error while downloading files", slog.Any("err", err))
@@ -72,8 +60,9 @@ func Download(ctx context.Context, opts *DownloadJobOpts) error {
 	return err
 }
 
-func getFilesToDownload(client *sftp.Client, remotePath, localPath string) ([]downloadJob, error) {
-	var jobs []downloadJob
+// TODO: primitive deduplication (in case of failures, sha-based)
+func getFilesToDownload(client *sftp.Client, remotePath, localPath string) ([]workerJob, error) {
+	var jobs []workerJob
 
 	walker := client.Walk(remotePath)
 	for walker.Step() {
@@ -87,7 +76,7 @@ func getFilesToDownload(client *sftp.Client, remotePath, localPath string) ([]do
 		}
 		localFilePath := filepath.Join(localPath, relPath)
 
-		jobs = append(jobs, downloadJob{
+		jobs = append(jobs, workerJob{
 			RemotePath: walker.Path(),
 			LocalPath:  localFilePath,
 			IsDir:      walker.Stat().IsDir(),
@@ -111,7 +100,7 @@ func downloadFiles(ctx context.Context, client *sftp.Client, remotePath, localPa
 		slog.Int("files", len(files)),
 	)
 
-	filesChan := make(chan downloadJob, len(files))
+	filesChan := make(chan workerJob, len(files))
 	errorChan := make(chan error, len(files))
 	var wg sync.WaitGroup
 
@@ -157,7 +146,7 @@ func downloadFiles(ctx context.Context, client *sftp.Client, remotePath, localPa
 	return lastErr
 }
 
-func downloadFile(client *sftp.Client, jb downloadJob) error {
+func downloadFile(client *sftp.Client, jb workerJob) error {
 	remotePath := filepath.ToSlash(jb.RemotePath)
 	localPath := filepath.ToSlash(jb.LocalPath)
 

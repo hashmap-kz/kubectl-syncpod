@@ -104,7 +104,7 @@ apk add kubectl-syncpod_linux_amd64.apk --allow-untrusted
 kubectl syncpod download --namespace vault --pvc postgresql --mount-path=/var/lib/postgresql/data --src=pgdata --dst=backups
 
 # Upload the local 'k8s' directory to the container's '/var/lib/postgresql/data/pgdata' path
-kubectl syncpod upload --namespace vault --pvc postgresql --mount-path=/var/lib/postgresql/data pgdata k8s
+kubectl syncpod upload --namespace vault --pvc postgresql --mount-path=/var/lib/postgresql/data --src=k8s --dst=pgdata
 ```
 
 ---
