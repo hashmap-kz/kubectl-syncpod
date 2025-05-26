@@ -76,12 +76,9 @@ func getFilesToUpload(client *sftp.Client, localPath, remotePath string) ([]work
 			if err == nil {
 				job.LocalHash = localHash
 			}
-			if f, err := client.Open(target); err == nil {
-				remoteHash, err := sha256File(f)
-				f.Close()
-				if err == nil {
-					job.RemoteHash = remoteHash
-				}
+			remoteHash, err := sha256RemoteFile(client, target)
+			if err == nil {
+				job.RemoteHash = remoteHash
 			}
 		}
 
