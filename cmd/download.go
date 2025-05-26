@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"log"
 
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -26,8 +27,21 @@ func newDownloadCmd(ctx context.Context, streams genericiooptions.IOStreams) *co
 	opts := genericclioptions.NewConfigFlags(true)
 	downloadOptions := DownloadOptions{}
 	cmd := &cobra.Command{
-		Use:           "download",
-		Short:         "Download files from a PVC via temporary pod",
+		Use:   "download",
+		Short: "Download files from a PVC via temporary pod",
+		Long: `
+Example:
+
+Download the pgdata directory from the container’s /var/lib/postgresql/data
+mount into the local backups directory:
+
+kubectl syncpod download \
+  --namespace vault \
+  --pvc postgresql \
+  --mount-path=/var/lib/postgresql/data \
+  --src=pgdata \
+  --dst=backups
+`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
@@ -44,7 +58,10 @@ func newDownloadCmd(ctx context.Context, streams genericiooptions.IOStreams) *co
 	cmd.Flags().StringVar(&downloadOptions.Src, "src", "", "Source")
 	cmd.Flags().StringVar(&downloadOptions.Dst, "dst", "", "Destination")
 	for _, rf := range []string{"mount-path", "pvc", "src", "dst"} {
-		_ = cmd.MarkFlagRequired(rf)
+		err := cmd.MarkFlagRequired(rf)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 	opts.AddFlags(cmd.Flags())
 	return cmd

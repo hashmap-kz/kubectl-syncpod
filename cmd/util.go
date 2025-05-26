@@ -28,7 +28,7 @@ const (
 
 var (
 	activeDeadlineSeconds int64 = 86400 / 2 // TODO: configure
-	gracePeriodSeconds    int64 = 0
+	gracePeriodSeconds    int64
 )
 
 type nodeInfo struct {
