@@ -102,7 +102,7 @@ func getSigner(key []byte, passphrase string) (ssh.Signer, error) {
 }
 
 // Authentication with password or private_key+optional(passphrase)
-func getAuthsMethods(password string, privateKeyBytes []byte, privateKeyFilename string, privateKeyPassphrase string) ([]ssh.AuthMethod, error) {
+func getAuthsMethods(password string, privateKeyBytes []byte, privateKeyFilename, privateKeyPassphrase string) ([]ssh.AuthMethod, error) {
 	var auths []ssh.AuthMethod
 	var err error
 
