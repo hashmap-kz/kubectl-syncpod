@@ -16,8 +16,9 @@ type SFTPConfig struct {
 	User string
 	Pass string
 
-	PkeyPath string
-	PkeyPass string // Optional, it private key is created with a passphrase
+	PkeyBytes []byte
+	PkeyPath  string
+	PkeyPass  string // Optional, it private key is created with a passphrase
 }
 
 type SFTPClient struct {
@@ -27,7 +28,7 @@ type SFTPClient struct {
 }
 
 func NewSFTPClient(cfg *SFTPConfig) (*SFTPClient, error) {
-	authMethods, err := getAuthsMethods(cfg.Pass, cfg.PkeyPath, cfg.PkeyPass)
+	authMethods, err := getAuthsMethods(cfg.Pass, cfg.PkeyBytes, cfg.PkeyPath, cfg.PkeyPass)
 	if err != nil {
 		return nil, err
 	}
@@ -101,15 +102,23 @@ func getSigner(key []byte, passphrase string) (ssh.Signer, error) {
 }
 
 // Authentication with password or private_key+optional(passphrase)
-func getAuthsMethods(password string, privateKeyFilename string, privateKeyPassphrase string) ([]ssh.AuthMethod, error) {
+func getAuthsMethods(password string, privateKeyBytes []byte, privateKeyFilename string, privateKeyPassphrase string) ([]ssh.AuthMethod, error) {
 	var auths []ssh.AuthMethod
+	var err error
 
 	if password != "" {
 		auths = append(auths, ssh.Password(password))
 	} else {
-		key, err := os.ReadFile(privateKeyFilename)
-		if err != nil {
-			return nil, err
+		var key []byte
+		if privateKeyBytes != nil {
+			key = privateKeyBytes
+		} else if privateKeyFilename != "" {
+			key, err = os.ReadFile(privateKeyFilename)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, fmt.Errorf("neither pkey-bytes nor pkey-path are defined")
 		}
 
 		signer, err := getSigner(key, privateKeyPassphrase)
