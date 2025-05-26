@@ -129,7 +129,8 @@ kubectl syncpod upload \
   --pvc postgresql \
   --mount-path=/var/lib/postgresql/data \
   --src=k8s \
-  --dst=pgdata
+  --dst=pgdata \
+  --allow-overwrite
 ```
 
 ---
