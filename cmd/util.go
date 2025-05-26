@@ -106,22 +106,19 @@ func run(ctx context.Context, opts *RunOpts) error {
 		}
 	}()
 
+	jobOpts := &pipe.JobOpts{
+		Host:      node.addr,
+		Port:      int(port),
+		Remote:    filepath.ToSlash(opts.Remote),
+		Local:     filepath.ToSlash(opts.Local),
+		MountPath: filepath.ToSlash(opts.MountPath),
+		Workers:   opts.Workers,
+	}
 	switch opts.Mode {
 	case "upload":
-		return pipe.Upload(node.addr, int(port),
-			filepath.ToSlash(opts.Local),
-			filepath.ToSlash(opts.Remote),
-			filepath.ToSlash(opts.MountPath),
-		)
+		return pipe.Upload(ctx, jobOpts)
 	case "download":
-		return pipe.Download(ctx, &pipe.DownloadJobOpts{
-			Host:      node.addr,
-			Port:      int(port),
-			Remote:    filepath.ToSlash(opts.Remote),
-			Local:     filepath.ToSlash(opts.Local),
-			MountPath: filepath.ToSlash(opts.MountPath),
-			Workers:   opts.Workers,
-		})
+		return pipe.Download(ctx, jobOpts)
 	default:
 		return fmt.Errorf("unknown mode: %s", opts.Mode)
 	}
