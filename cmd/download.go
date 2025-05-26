@@ -11,34 +11,40 @@ import (
 type DownloadOptions struct {
 	MountPath string
 	PVC       string
+	Workers   int
+	Dst       string
+	Src       string
 }
 
 type downloadRunOpts struct {
 	configFlags *genericclioptions.ConfigFlags
 	streams     genericiooptions.IOStreams
 	opts        DownloadOptions
-	args        []string
 }
 
 func newDownloadCmd(ctx context.Context, streams genericiooptions.IOStreams) *cobra.Command {
 	opts := genericclioptions.NewConfigFlags(true)
 	downloadOptions := DownloadOptions{}
 	cmd := &cobra.Command{
-		Use:          "download <remote-path> <local-dir>",
+		Use:          "download",
 		Short:        "Download files from a PVC via temporary pod",
 		SilenceUsage: true,
-		Args:         cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			return runDownload(ctx, &downloadRunOpts{
 				configFlags: opts,
 				streams:     streams,
 				opts:        downloadOptions,
-				args:        args,
 			})
 		},
 	}
+	cmd.Flags().IntVarP(&downloadOptions.Workers, "workers", "w", 4, "Concurrent workers")
 	cmd.Flags().StringVar(&downloadOptions.MountPath, "mount-path", "", "Mount path inside the helper pod (required)")
 	cmd.Flags().StringVar(&downloadOptions.PVC, "pvc", "", "PVC name (required)")
+	cmd.Flags().StringVar(&downloadOptions.Src, "src", "", "Source")
+	cmd.Flags().StringVar(&downloadOptions.Dst, "dst", "", "Destination")
+	for _, rf := range []string{"mount-path", "pvc", "src", "dst"} {
+		_ = cmd.MarkFlagRequired(rf)
+	}
 	opts.AddFlags(cmd.Flags())
 	return cmd
 }
@@ -48,12 +54,13 @@ func runDownload(ctx context.Context, opts *downloadRunOpts) error {
 	if opts.configFlags.Namespace != nil {
 		namespace = *opts.configFlags.Namespace
 	}
-	return run(ctx,
-		"download",
-		opts.opts.PVC,
-		namespace,
-		opts.args[1],
-		opts.args[0],
-		opts.opts.MountPath,
-	)
+	return run(ctx, &RunOpts{
+		Mode:      "download",
+		PVC:       opts.opts.PVC,
+		Namespace: namespace,
+		Remote:    opts.opts.Src,
+		Local:     opts.opts.Dst,
+		MountPath: opts.opts.MountPath,
+		Workers:   opts.opts.Workers,
+	})
 }

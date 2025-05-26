@@ -31,7 +31,17 @@ type nodeInfo struct {
 	addr string
 }
 
-func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath string) error {
+type RunOpts struct {
+	Mode      string
+	PVC       string
+	Namespace string
+	Remote    string
+	Local     string
+	MountPath string
+	Workers   int
+}
+
+func run(ctx context.Context, opts *RunOpts) error {
 	// config routine
 
 	slog.Info("init k8s config")
@@ -52,7 +62,7 @@ func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath str
 	// node
 
 	slog.Info("fetching target node to schedule pod on")
-	node, err := getNodeInfo(ctx, client, namespace, pvc)
+	node, err := getNodeInfo(ctx, client, opts.Namespace, opts.PVC)
 	if err != nil {
 		return err
 	}
@@ -60,7 +70,7 @@ func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath str
 	// pod
 
 	slog.Info("creating pod")
-	err = createHelperPod(ctx, client, namespace, pvc, mountPath, node.name)
+	err = createHelperPod(ctx, client, opts.Namespace, opts.PVC, opts.MountPath, node.name)
 	if err != nil {
 		return err
 	}
@@ -68,7 +78,7 @@ func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath str
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := deleteHelperPod(cleanupCtx, client, namespace); err != nil {
+		if err := deleteHelperPod(cleanupCtx, client, opts.Namespace); err != nil {
 			slog.Error("cannot delete pod", slog.Any("err", err))
 		} else {
 			slog.Info("pod deleted", slog.String("name", objName))
@@ -78,7 +88,7 @@ func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath str
 	// service
 
 	slog.Info("creating service")
-	port, err := createNodePortService(ctx, client, namespace)
+	port, err := createNodePortService(ctx, client, opts.Namespace)
 	if err != nil {
 		return err
 	}
@@ -89,28 +99,31 @@ func run(ctx context.Context, mode, pvc, namespace, local, remote, mountPath str
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := deleteHelperService(cleanupCtx, client, namespace, objName); err != nil {
+		if err := deleteHelperService(cleanupCtx, client, opts.Namespace, objName); err != nil {
 			slog.Error("cannot delete service", slog.Any("err", err))
 		} else {
 			slog.Info("service deleted", slog.String("name", objName))
 		}
 	}()
 
-	switch mode {
+	switch opts.Mode {
 	case "upload":
 		return pipe.Upload(node.addr, int(port),
-			filepath.ToSlash(local),
-			filepath.ToSlash(remote),
-			filepath.ToSlash(mountPath),
+			filepath.ToSlash(opts.Local),
+			filepath.ToSlash(opts.Remote),
+			filepath.ToSlash(opts.MountPath),
 		)
 	case "download":
-		return pipe.Download(node.addr, int(port),
-			filepath.ToSlash(remote),
-			filepath.ToSlash(local),
-			filepath.ToSlash(mountPath),
-		)
+		return pipe.Download(ctx, &pipe.DownloadJobOpts{
+			Host:      node.addr,
+			Port:      int(port),
+			Remote:    filepath.ToSlash(opts.Remote),
+			Local:     filepath.ToSlash(opts.Local),
+			MountPath: filepath.ToSlash(opts.MountPath),
+			Workers:   opts.Workers,
+		})
 	default:
-		return fmt.Errorf("unknown mode: %s", mode)
+		return fmt.Errorf("unknown mode: %s", opts.Mode)
 	}
 }
 
