@@ -102,7 +102,7 @@ func uploadFiles(ctx context.Context, client *sftp.Client, localPath, remotePath
 		workers = 1
 	}
 
-	slog.Debug("starting concurrent file upload",
+	slog.Info("starting concurrent file upload",
 		slog.Int("workers", workers),
 		slog.Int("files", len(files)),
 	)

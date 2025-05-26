@@ -112,7 +112,7 @@ func downloadFiles(ctx context.Context, client *sftp.Client, remotePath, localPa
 		workers = 1
 	}
 
-	slog.Debug("starting concurrent file download",
+	slog.Info("starting concurrent file download",
 		slog.Int("workers", workers),
 		slog.Int("files", len(files)),
 	)
