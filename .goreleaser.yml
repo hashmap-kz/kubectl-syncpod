@@ -42,6 +42,24 @@ changelog:
       - "^docs:"
       - "^test:"
 
+nfpms:
+  - file_name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+    maintainer: alexey.zh
+    homepage: "https://github.com/hashmap-kz/kubectl-syncpod"
+    description: "High-Speed File Transfer to and from PVCs"
+    license: "Apache-2.0"
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/bin
+    section: utils
+    contents:
+      - src: ./LICENSE
+        dst: /usr/share/doc/kubectl-syncpod/copyright
+        file_info:
+          mode: 0644
+
 brews:
   - name: kubectl-syncpod
     repository:
