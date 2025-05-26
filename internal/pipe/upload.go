@@ -15,12 +15,12 @@ import (
 
 func Upload(ctx context.Context, opts *JobOpts) error {
 	slog.Info("waiting while SSHD is ready")
-	if err := waitForSSHReady(opts.Host, opts.Port, sshWaitTimeout); err != nil {
+	if err := waitForSSHReady(opts.KeyPair, opts.Host, opts.Port, sshWaitTimeout); err != nil {
 		return err
 	}
 
 	slog.Info("init SSH client")
-	client, err := newSFTPClient(opts.Host, opts.Port)
+	client, err := newSFTPClient(opts.KeyPair, opts.Host, opts.Port)
 	if err != nil {
 		return err
 	}

@@ -28,12 +28,13 @@ type JobOpts struct {
 	Remote    string
 	MountPath string
 	Workers   int
+	KeyPair   *clients.KeyPair
 }
 
-func waitForSSHReady(host string, port int, timeout time.Duration) error {
+func waitForSSHReady(keyPair *clients.KeyPair, host string, port int, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		client, err := newSFTPClient(host, port)
+		client, err := newSFTPClient(keyPair, host, port)
 		if err == nil {
 			return client.Close()
 		}
@@ -41,12 +42,16 @@ func waitForSSHReady(host string, port int, timeout time.Duration) error {
 	return fmt.Errorf("sshd not ready on %s:%d after %v", host, port, timeout)
 }
 
-func newSFTPClient(host string, port int) (*clients.SFTPClient, error) {
+func newSFTPClient(keyPair *clients.KeyPair, host string, port int) (*clients.SFTPClient, error) {
+	privateKeyToPEM, err := keyPair.PrivateKeyToPEM()
+	if err != nil {
+		return nil, err
+	}
 	return clients.NewSFTPClient(&clients.SFTPConfig{
-		Host: host,
-		Port: port,
-		User: "root",
-		Pass: "root",
+		Host:      host,
+		Port:      port,
+		User:      "root",
+		PkeyBytes: privateKeyToPEM,
 	})
 }
 

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/hashmap-kz/kubectl-syncpod/internal/clients"
+
 	"github.com/hashmap-kz/kubectl-syncpod/internal/pipe"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -70,10 +72,18 @@ func run(ctx context.Context, opts *RunOpts) error {
 		return err
 	}
 
+	// auth
+
+	slog.Info("create ssh key-pair")
+	ed25519Keys, err := clients.GenerateEd25519Keys()
+	if err != nil {
+		return err
+	}
+
 	// pod
 
 	slog.Info("creating pod")
-	err = createHelperPod(ctx, client, opts.Namespace, opts.PVC, opts.MountPath, node.name)
+	err = createHelperPod(ctx, client, ed25519Keys, opts.Namespace, opts.PVC, opts.MountPath, node.name)
 	if err != nil {
 		return err
 	}
@@ -116,6 +126,7 @@ func run(ctx context.Context, opts *RunOpts) error {
 		Local:     filepath.ToSlash(opts.Local),
 		MountPath: filepath.ToSlash(opts.MountPath),
 		Workers:   opts.Workers,
+		KeyPair:   ed25519Keys,
 	}
 	switch opts.Mode {
 	case "upload":
@@ -129,7 +140,12 @@ func run(ctx context.Context, opts *RunOpts) error {
 
 // objects
 
-func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace, pvc, mountPath, pvcNodeName string) error {
+func createHelperPod(
+	ctx context.Context,
+	client *kubernetes.Clientset,
+	keyPair *clients.KeyPair,
+	namespace, pvc, mountPath, pvcNodeName string,
+) error {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      objName,
@@ -146,8 +162,12 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 					Image: helperImage,
 					Command: []string{"sh", "-c", `
   apk update && apk add openssh &&
-  echo "root:root" | chpasswd &&
-  echo "PermitRootLogin yes" >> /etc/ssh/sshd_config &&
+  mkdir -p /root/.ssh &&
+  echo "${PUB_KEY}" > /root/.ssh/authorized_keys &&
+  chmod 600 /root/.ssh/authorized_keys &&
+  echo "PasswordAuthentication no" >> /etc/ssh/sshd_config &&
+  echo "ChallengeResponseAuthentication no" >> /etc/ssh/sshd_config &&
+  echo "PermitRootLogin prohibit-password" >> /etc/ssh/sshd_config &&
   ssh-keygen -A &&
   /usr/sbin/sshd -D -p 2525
 `},
@@ -156,6 +176,12 @@ func createHelperPod(ctx context.Context, client *kubernetes.Clientset, namespac
 						{
 							Name:      "data",
 							MountPath: mountPath,
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "PUB_KEY",
+							Value: keyPair.PublicKeyEncodedToString,
 						},
 					},
 					Ports: []corev1.ContainerPort{
