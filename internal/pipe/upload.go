@@ -49,8 +49,7 @@ func Upload(ctx context.Context, opts *JobOpts) error {
 	return err
 }
 
-// TODO: primitive deduplication (in case of failures, sha-based)
-func getFilesToUpload(localPath, remotePath string) ([]workerJob, error) {
+func getFilesToUpload(client *sftp.Client, localPath, remotePath string) ([]workerJob, error) {
 	var jobs []workerJob
 	base := filepath.Base(localPath)
 
@@ -62,21 +61,40 @@ func getFilesToUpload(localPath, remotePath string) ([]workerJob, error) {
 		if err != nil {
 			return err
 		}
-		rel = filepath.ToSlash(filepath.Join(base, rel)) // preserve top-level dir
+		rel = filepath.ToSlash(filepath.Join(base, rel))
 		target := filepath.ToSlash(filepath.Join(remotePath, rel))
 
-		jobs = append(jobs, workerJob{
+		isDir := d.IsDir()
+		job := workerJob{
 			LocalPath:  path,
 			RemotePath: target,
-			IsDir:      d.IsDir(),
-		})
+			IsDir:      isDir,
+		}
+
+		if !isDir {
+			localHash, err := sha256LocalFile(path)
+			if err == nil {
+				job.LocalHash = localHash
+			}
+			if f, err := client.Open(target); err == nil {
+				remoteHash, err := sha256File(f)
+				f.Close()
+				if err == nil {
+					job.RemoteHash = remoteHash
+				}
+			}
+		}
+
+		if job.IsDir || job.LocalHash != job.RemoteHash {
+			jobs = append(jobs, job)
+		}
 		return nil
 	})
 	return jobs, err
 }
 
 func uploadFiles(ctx context.Context, client *sftp.Client, localPath, remotePath string, workers int) error {
-	files, err := getFilesToUpload(localPath, remotePath)
+	files, err := getFilesToUpload(client, localPath, remotePath)
 	if err != nil {
 		return err
 	}
@@ -136,6 +154,11 @@ func uploadFile(client *sftp.Client, jb workerJob) error {
 	if jb.IsDir {
 		return client.MkdirAll(remotePath)
 	}
+
+	slog.Debug("upload file",
+		slog.String("remote", remotePath),
+		slog.String("local", localPath),
+	)
 
 	srcFile, err := os.Open(localPath)
 	if err != nil {
