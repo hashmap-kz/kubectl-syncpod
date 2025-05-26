@@ -52,7 +52,7 @@ brews:
       name: alexey.zh
       email: mailbox.stdio@gmail.com
     homepage: https://github.com/hashmap-kz/homebrew-tap
-    description: "Move Files In and Out of PVCs Safely and Quickly"
+    description: "High-Speed File Transfer to and from PVCs"
     license: "Apache-2.0"
     install: |
       bin.install "kubectl-syncpod"
