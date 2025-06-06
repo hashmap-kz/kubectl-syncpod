@@ -3,7 +3,7 @@
 Prepare binaries
 
 ```bash
-(cd ../ && make build && mv bin k8s)
+(cd ../../ && make build && mv bin k8s)
 ```
 
 Create a basebackup from a running PostgreSQL instance
