@@ -22,6 +22,9 @@ type JobOpts struct {
 	Workers        int
 	KeyPair        *clients.KeyPair
 	AllowOverwrite bool
+	ObjName        string
+	Namespace      string
+	Owner          string
 }
 
 func waitForSSHReady(keyPair *clients.KeyPair, host string, port int, timeout time.Duration) error {

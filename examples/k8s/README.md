@@ -3,7 +3,7 @@
 Prepare binaries
 
 ```bash
-(cd ../../ && make build && mv bin k8s)
+(cd ../../ && make build && mv bin examples/k8s)
 ```
 
 Create a basebackup from a running PostgreSQL instance
@@ -31,7 +31,7 @@ sudo chown -R "${USER}:${USER}" backups
 Stop PostgreSQL running as a container, restore from a basebackup
 
 ```bash
-kubectl -n pgrwl-test scale --replicas=0 statefulset/postgres
+#kubectl -n pgrwl-test scale --replicas=0 statefulset/postgres
 
 bin/kubectl-syncpod upload \
   --namespace pgrwl-test \
@@ -39,7 +39,8 @@ bin/kubectl-syncpod upload \
   --mount-path=/var/lib/postgresql/data \
   --src=backups \
   --dst=pgdata-new \
-  --allow-overwrite
+  --allow-overwrite \
+  --owner="999:999"
 ```
 
 Start PostgreSQL 

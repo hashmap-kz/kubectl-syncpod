@@ -16,6 +16,7 @@ type UploadOptions struct {
 	Dst            string
 	Src            string
 	AllowOverwrite bool
+	Owner          string
 }
 
 type uploadRunOpts struct {
@@ -59,6 +60,7 @@ kubectl syncpod upload \
 	cmd.Flags().IntVarP(&uploadOptions.Workers, "workers", "w", 4, "Concurrent workers")
 	cmd.Flags().StringVar(&uploadOptions.Src, "src", "", "Source")
 	cmd.Flags().StringVar(&uploadOptions.Dst, "dst", "", "Destination")
+	cmd.Flags().StringVar(&uploadOptions.Owner, "owner", "", "Owner: chown postgres:postgres")
 	cmd.Flags().BoolVar(&uploadOptions.AllowOverwrite, "allow-overwrite", false, "Allow overwriting existing files")
 	for _, rf := range []string{"mount-path", "pvc", "src", "dst"} {
 		err := cmd.MarkFlagRequired(rf)
@@ -84,5 +86,6 @@ func runUpload(ctx context.Context, opts *uploadRunOpts) error {
 		MountPath:      opts.opts.MountPath,
 		Workers:        opts.opts.Workers,
 		AllowOverwrite: opts.opts.AllowOverwrite,
+		Owner:          opts.opts.Owner,
 	})
 }
