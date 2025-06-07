@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"k8s.io/client-go/tools/remotecommand"
 
@@ -45,6 +46,14 @@ func Upload(ctx context.Context, opts *JobOpts) error {
 		slog.String("remote", remotePath),
 	)
 
+	// preserve original directory
+	err = renameRemoteDirIfExists(client.SFTPClient(), remotePath)
+	if err != nil {
+		slog.Error("failed to rename existing remote dir", slog.Any("err", err))
+		return err
+	}
+
+	// upload
 	err = uploadFiles(ctx, client.SFTPClient(), localPath, remotePath, opts.Workers, opts.AllowOverwrite)
 	if err != nil {
 		slog.Error("error while uploading files", slog.Any("err", err))
@@ -66,6 +75,37 @@ func Upload(ctx context.Context, opts *JobOpts) error {
 		slog.Info("chown completed successfully")
 	} else {
 		slog.Info("no owner change requested")
+	}
+
+	return nil
+}
+
+func renameRemoteDirIfExists(client *sftp.Client, remotePath string) error {
+	stat, err := client.Stat(remotePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// Nothing to do
+			return nil
+		}
+		return fmt.Errorf("error stat remote dir: %w", err)
+	}
+
+	if !stat.IsDir() {
+		return fmt.Errorf("remote path exists but is not a directory: %s", remotePath)
+	}
+
+	// Build new name
+	ts := time.Now().Format("2006-01-02-150405")
+	newName := fmt.Sprintf("%s-original-%s", remotePath, ts)
+
+	slog.Info("renaming existing remote dir",
+		slog.String("from", remotePath),
+		slog.String("to", newName),
+	)
+
+	err = client.Rename(remotePath, newName)
+	if err != nil {
+		return fmt.Errorf("failed to rename remote dir: %w", err)
 	}
 
 	return nil

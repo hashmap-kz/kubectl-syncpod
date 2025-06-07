@@ -1,11 +1,5 @@
 ## Usage (WIP)
 
-Prepare binaries
-
-```bash
-(rm -rf bin && cd ../../ && make build && mv bin examples/k8s)
-```
-
 Create a basebackup from a running PostgreSQL instance
 
 ```bash
@@ -32,6 +26,8 @@ Stop PostgreSQL running as a container, restore from a basebackup
 
 ```bash
 #kubectl -n pgrwl-test scale --replicas=0 statefulset/postgres
+
+(rm -rf bin && cd ../../ && make build && mv bin examples/k8s)
 
 bin/kubectl-syncpod upload \
   --namespace pgrwl-test \
