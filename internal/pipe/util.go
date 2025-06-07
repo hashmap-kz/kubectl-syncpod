@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"time"
 
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+
 	"github.com/hashmap-kz/kubectl-syncpod/internal/clients"
 )
 
@@ -22,6 +25,12 @@ type JobOpts struct {
 	Workers        int
 	KeyPair        *clients.KeyPair
 	AllowOverwrite bool
+	ObjName        string
+	Namespace      string
+	Owner          string
+
+	Client     kubernetes.Interface
+	RestConfig *rest.Config
 }
 
 func waitForSSHReady(keyPair *clients.KeyPair, host string, port int, timeout time.Duration) error {
