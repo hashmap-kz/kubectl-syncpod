@@ -11,7 +11,7 @@ _High-Speed File Transfer to and from Kubernetes PVCs_
 
 ---
 
-## 🚀 About
+## About
 
 - While `kubectl cp` and `kubectl exec` can both be used to copy files, performance degrades significantly when the
   target size is large (e.g., ~100Gi). In such cases, execution becomes drastically slow.
@@ -33,7 +33,7 @@ situation becomes more complex. In such cases, conventional tools fall short.
 Also - you may want to scale your StatefulSet to zero and back up the PVC contents safely and efficiently - for local
 testing, migration, or recovery.
 
-### 🧱 How It Works
+### How It Works
 
 `kubectl-syncpod` spins up a **temporary helper pod** that:
 
@@ -50,7 +50,7 @@ The CLI then:
 
 ---
 
-## 🚀 Installation
+## Installation
 
 ### Using `krew`
 
@@ -130,12 +130,13 @@ kubectl syncpod upload \
   --mount-path=/var/lib/postgresql/data \
   --src=k8s \
   --dst=pgdata \
-  --allow-overwrite
+  --allow-overwrite \
+  --owner="999:999"
 ```
 
 ---
 
-## 🔍 Comparison Table
+## Comparison Table
 
 | Feature                                   | `kubectl cp`                    | `kubectl exec`          | `kubectl-syncpod` (SFTP mode)         |
 |-------------------------------------------|---------------------------------|-------------------------|---------------------------------------|
@@ -151,7 +152,7 @@ kubectl syncpod upload \
 | Supports concurrent transfers             | ❌                               | ❌                       | ✅ (parallel SFTP workers)             |
 | Performance on large file trees           | 🐢 Slow                         | 🐢 Slow                 | 🚀 Fast (streaming + concurrency)     |
 
-### 🚀 When to Use This Plugin
+### When to Use This Plugin
 
 Use kubectl-syncpod instead of kubectl cp or kubectl exec when:
 
