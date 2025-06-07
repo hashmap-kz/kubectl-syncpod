@@ -133,6 +133,8 @@ func run(ctx context.Context, opts *RunOpts) error {
 		ObjName:        objName,
 		Owner:          opts.Owner,
 		Namespace:      opts.Namespace,
+		Client:         client,
+		RestConfig:     config,
 	}
 	switch opts.Mode {
 	case "upload":

@@ -1,14 +1,16 @@
 package pipe
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
+
+	"k8s.io/client-go/tools/remotecommand"
 
 	"github.com/pkg/errors"
 
@@ -60,9 +62,8 @@ func Upload(ctx context.Context, opts *JobOpts) error {
 		if chownErr != nil {
 			slog.Error("error while running chown", slog.Any("err", chownErr))
 			return chownErr
-		} else {
-			slog.Info("chown completed successfully")
 		}
+		slog.Info("chown completed successfully")
 	} else {
 		slog.Info("no owner change requested")
 	}
@@ -71,24 +72,49 @@ func Upload(ctx context.Context, opts *JobOpts) error {
 }
 
 func runChownInPod(ctx context.Context, opts *JobOpts, targetPath string) error {
-	// TODO: replace this with a k8s API exec call.
+	cmd := []string{"chown", "-R", opts.Owner, targetPath}
 
-	// Build the command
-	kubectlCmd := []string{
-		"kubectl", "exec", "-n", opts.Namespace, opts.ObjName,
-		"--", "chown", "-R", opts.Owner, targetPath,
+	slog.Info("exec chown",
+		slog.String("pod", opts.ObjName),
+		slog.String("cmd", fmt.Sprintf("%v", cmd)),
+	)
+
+	req := opts.Client.CoreV1().RESTClient().
+		Post().
+		Resource("pods").
+		Name(opts.ObjName).
+		Namespace(opts.Namespace).
+		SubResource("exec").
+		Param("container", opts.ObjName).
+		Param("stdout", "true").
+		Param("stderr", "true").
+		Param("stdin", "false").
+		Param("tty", "false")
+
+	for _, c := range cmd {
+		req.Param("command", c)
 	}
 
-	slog.Info("exec", slog.String("kubectl", fmt.Sprintf("%v", kubectlCmd)))
-
-	// Run it
-	cmd := exec.CommandContext(ctx, kubectlCmd[0], kubectlCmd[1:]...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("kubectl exec chown failed: %w", err)
+	execSPDY, err := remotecommand.NewSPDYExecutor(opts.RestConfig, "POST", req.URL())
+	if err != nil {
+		return fmt.Errorf("error creating SPDY executor: %w", err)
 	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+
+	err = execSPDY.StreamWithContext(ctx, remotecommand.StreamOptions{
+		Stdout: &stdoutBuf,
+		Stderr: &stderrBuf,
+		Tty:    false,
+	})
+
+	slog.Info("chown stdout", slog.String("stdout", stdoutBuf.String()))
+	slog.Info("chown stderr", slog.String("stderr", stderrBuf.String()))
+
+	if err != nil {
+		return fmt.Errorf("exec chown failed: %w", err)
+	}
+
 	return nil
 }
 
