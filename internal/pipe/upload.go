@@ -120,7 +120,6 @@ func runChownInPod(ctx context.Context, opts *JobOpts, targetPath string) error 
 
 func getFilesToUpload(client *sftp.Client, localPath, remotePath string, allowOverwrite bool) ([]workerJob, error) {
 	var jobs []workerJob
-	base := filepath.Base(localPath)
 
 	err := filepath.WalkDir(localPath, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -130,7 +129,7 @@ func getFilesToUpload(client *sftp.Client, localPath, remotePath string, allowOv
 		if err != nil {
 			return err
 		}
-		rel = filepath.ToSlash(filepath.Join(base, rel))
+		rel = filepath.ToSlash(rel)
 		target := filepath.ToSlash(filepath.Join(remotePath, rel))
 		isDir := d.IsDir()
 
