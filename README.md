@@ -11,7 +11,7 @@ _High-Speed File Transfer to and from Kubernetes PVCs_
 
 ---
 
-## 🚀 About
+## About
 
 - While `kubectl cp` and `kubectl exec` can both be used to copy files, performance degrades significantly when the
   target size is large (e.g., ~100Gi). In such cases, execution becomes drastically slow.
@@ -22,7 +22,19 @@ _High-Speed File Transfer to and from Kubernetes PVCs_
 - Most importantly, these methods do not support concurrent read/write operations - a critical limitation when
   performance and throughput matter.
 
-### Typical Use Case
+### Features
+
+- Upload local files or directories to a pod's mounted volume
+- Download pod volume files back to local machine
+- Safe overwrite protection
+- Auto-rename existing remote directories (`pgdata-new-original-YYYY-MM-DD-HHMMSS`)
+- Concurrent file transfer with worker pool
+- Preserves directory structure
+- Optional automatic `chown` of uploaded files inside the pod (via Kubernetes exec API)
+- Fully based on **SFTP** + **Kubernetes Exec API** — no side effects on other pod processes
+
+
+### Typical Use Cases
 
 You’re running PostgreSQL as a StatefulSet, and you need to restore a database from a basebackup and a WAL archive.
 If the volume is hostPath-based, this is relatively straightforward - you simply copy the required files onto the target
@@ -33,7 +45,14 @@ situation becomes more complex. In such cases, conventional tools fall short.
 Also - you may want to scale your StatefulSet to zero and back up the PVC contents safely and efficiently - for local
 testing, migration, or recovery.
 
-### 🧱 How It Works
+Basic Scenarios:
+
+- ✅ Download backup from PVC for verification / restore
+- ✅ Sync files between PVCs and local environment
+- ✅ Testing PVC mount behavior
+- ✅ CI/CD pipelines to prepare volume data
+
+### How It Works
 
 `kubectl-syncpod` spins up a **temporary helper pod** that:
 
@@ -50,7 +69,7 @@ The CLI then:
 
 ---
 
-## 🚀 Installation
+## Installation
 
 ### Using `krew`
 
@@ -110,32 +129,50 @@ apk add kubectl-syncpod_linux_amd64.apk --allow-untrusted
 
 ---
 
-## 🛠️ Usage
+---
 
-```
-# Download the 'pgdata' directory from the container's '/var/lib/postgresql/data' mount to the local 'backups' directory
-# 
-kubectl syncpod download \
-  --namespace vault \
-  --pvc postgresql \
-  --mount-path=/var/lib/postgresql/data \
-  --src=pgdata \
-  --dst=backups
+## Example CLI Usage
 
-# Upload the local 'k8s' directory to the container's '/var/lib/postgresql/data/pgdata' path
-#
-kubectl syncpod upload \
-  --namespace vault \
-  --pvc postgresql \
+### Upload with safe rename and chown:
+
+```bash
+kubectl-syncpod upload \
+  --namespace pgrwl-test \
+  --pvc postgres-data \
   --mount-path=/var/lib/postgresql/data \
-  --src=k8s \
-  --dst=pgdata \
-  --allow-overwrite
+  --src=backups \
+  --dst=pgdata-new \
+  --allow-overwrite \
+  --owner="999:999"
 ```
+
+Behavior:
+
+- `/var/lib/postgresql/data/pgdata-new` -> renamed if exists
+- `backups/*` -> uploaded to `pgdata-new/`
+- Ownership set to `999:999` inside pod
 
 ---
 
-## 🔍 Comparison Table
+### Download remote directory:
+
+```bash
+kubectl-syncpod download \
+  --namespace pgrwl-test \
+  --pvc postgres-data \
+  --mount-path=/var/lib/postgresql/data \
+  --src=pgdata-new \
+  --dst=backups-copy
+```
+
+Behavior:
+
+- `/var/lib/postgresql/data/pgdata-new/*` -> downloaded to `./backups-copy/` on local machine
+- Preserves directory structure
+
+---
+
+## Comparison Table
 
 | Feature                                   | `kubectl cp`                    | `kubectl exec`          | `kubectl-syncpod` (SFTP mode)         |
 |-------------------------------------------|---------------------------------|-------------------------|---------------------------------------|
@@ -150,15 +187,6 @@ kubectl syncpod upload \
 | Auto-cleans after sync                    | ❌                               | ❌                       | ✅                                     |
 | Supports concurrent transfers             | ❌                               | ❌                       | ✅ (parallel SFTP workers)             |
 | Performance on large file trees           | 🐢 Slow                         | 🐢 Slow                 | 🚀 Fast (streaming + concurrency)     |
-
-### 🚀 When to Use This Plugin
-
-Use kubectl-syncpod instead of kubectl cp or kubectl exec when:
-
-- Your main pod has restricted permissions or runs with readOnlyRootFilesystem
-- Your containers are minimal (distroless, scratch, etc.)
-- You want to sync to a volume (PVC) rather than the container FS
-- You need a safe way to upload or download large files without modifying your workload
 
 ---
 

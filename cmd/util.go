@@ -45,6 +45,7 @@ type RunOpts struct {
 	MountPath      string
 	Workers        int
 	AllowOverwrite bool
+	Owner          string
 }
 
 func run(ctx context.Context, opts *RunOpts) error {
@@ -129,6 +130,11 @@ func run(ctx context.Context, opts *RunOpts) error {
 		Workers:        opts.Workers,
 		KeyPair:        ed25519Keys,
 		AllowOverwrite: opts.AllowOverwrite,
+		ObjName:        objName,
+		Owner:          opts.Owner,
+		Namespace:      opts.Namespace,
+		Client:         client,
+		RestConfig:     config,
 	}
 	switch opts.Mode {
 	case "upload":

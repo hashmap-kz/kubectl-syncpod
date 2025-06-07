@@ -1,6 +1,7 @@
 package pipe
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -8,6 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
+
+	"k8s.io/client-go/tools/remotecommand"
 
 	"github.com/pkg/errors"
 
@@ -42,18 +46,120 @@ func Upload(ctx context.Context, opts *JobOpts) error {
 		slog.String("remote", remotePath),
 	)
 
+	// preserve original directory
+	err = renameRemoteDirIfExists(client.SFTPClient(), remotePath)
+	if err != nil {
+		slog.Error("failed to rename existing remote dir", slog.Any("err", err))
+		return err
+	}
+
+	// upload
 	err = uploadFiles(ctx, client.SFTPClient(), localPath, remotePath, opts.Workers, opts.AllowOverwrite)
 	if err != nil {
 		slog.Error("error while uploading files", slog.Any("err", err))
-	} else {
-		slog.Info("upload job completed successfully")
+		return err
 	}
-	return err
+
+	slog.Info("upload job completed successfully")
+
+	if opts.Owner != "" {
+		slog.Info("running chown in pod",
+			slog.String("owner", opts.Owner),
+			slog.String("path", remotePath),
+		)
+		chownErr := runChownInPod(ctx, opts, remotePath)
+		if chownErr != nil {
+			slog.Error("error while running chown", slog.Any("err", chownErr))
+			return chownErr
+		}
+		slog.Info("chown completed successfully")
+	} else {
+		slog.Info("no owner change requested")
+	}
+
+	return nil
+}
+
+func renameRemoteDirIfExists(client *sftp.Client, remotePath string) error {
+	stat, err := client.Stat(remotePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// Nothing to do
+			return nil
+		}
+		return fmt.Errorf("error stat remote dir: %w", err)
+	}
+
+	if !stat.IsDir() {
+		return fmt.Errorf("remote path exists but is not a directory: %s", remotePath)
+	}
+
+	// Build new name
+	ts := time.Now().Format("2006-01-02-150405")
+	newName := fmt.Sprintf("%s-original-%s", remotePath, ts)
+
+	slog.Info("renaming existing remote dir",
+		slog.String("from", remotePath),
+		slog.String("to", newName),
+	)
+
+	err = client.Rename(remotePath, newName)
+	if err != nil {
+		return fmt.Errorf("failed to rename remote dir: %w", err)
+	}
+
+	return nil
+}
+
+func runChownInPod(ctx context.Context, opts *JobOpts, targetPath string) error {
+	cmd := []string{"chown", "-R", opts.Owner, targetPath}
+
+	slog.Info("exec chown",
+		slog.String("pod", opts.ObjName),
+		slog.String("cmd", fmt.Sprintf("%v", cmd)),
+	)
+
+	req := opts.Client.CoreV1().RESTClient().
+		Post().
+		Resource("pods").
+		Name(opts.ObjName).
+		Namespace(opts.Namespace).
+		SubResource("exec").
+		Param("container", opts.ObjName).
+		Param("stdout", "true").
+		Param("stderr", "true").
+		Param("stdin", "false").
+		Param("tty", "false")
+
+	for _, c := range cmd {
+		req.Param("command", c)
+	}
+
+	execSPDY, err := remotecommand.NewSPDYExecutor(opts.RestConfig, "POST", req.URL())
+	if err != nil {
+		return fmt.Errorf("error creating SPDY executor: %w", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+
+	err = execSPDY.StreamWithContext(ctx, remotecommand.StreamOptions{
+		Stdout: &stdoutBuf,
+		Stderr: &stderrBuf,
+		Tty:    false,
+	})
+
+	slog.Info("chown stdout", slog.String("stdout", stdoutBuf.String()))
+	slog.Info("chown stderr", slog.String("stderr", stderrBuf.String()))
+
+	if err != nil {
+		return fmt.Errorf("exec chown failed: %w", err)
+	}
+
+	return nil
 }
 
 func getFilesToUpload(client *sftp.Client, localPath, remotePath string, allowOverwrite bool) ([]workerJob, error) {
 	var jobs []workerJob
-	base := filepath.Base(localPath)
 
 	err := filepath.WalkDir(localPath, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -63,7 +169,7 @@ func getFilesToUpload(client *sftp.Client, localPath, remotePath string, allowOv
 		if err != nil {
 			return err
 		}
-		rel = filepath.ToSlash(filepath.Join(base, rel))
+		rel = filepath.ToSlash(rel)
 		target := filepath.ToSlash(filepath.Join(remotePath, rel))
 		isDir := d.IsDir()
 
