@@ -7,8 +7,8 @@ require (
 	github.com/pkg/sftp v1.13.9
 	github.com/spf13/cobra v1.10.1
 	golang.org/x/crypto v0.41.0
-	k8s.io/api v0.34.0
-	k8s.io/apimachinery v0.34.0
+	k8s.io/api v0.34.1
+	k8s.io/apimachinery v0.34.1
 	k8s.io/cli-runtime v0.34.0
 	k8s.io/client-go v0.34.0
 )
