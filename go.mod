@@ -5,7 +5,7 @@ go 1.24.1
 require (
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.13.10
-	github.com/spf13/cobra v1.10.1
+	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.45.0
 	k8s.io/api v0.34.2
 	k8s.io/apimachinery v0.34.2
