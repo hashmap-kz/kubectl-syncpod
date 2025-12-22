@@ -7,15 +7,14 @@ require (
 	github.com/pkg/sftp v1.13.10
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.46.0
-	k8s.io/api v0.34.3
+	k8s.io/api v0.35.0
 	k8s.io/apimachinery v0.35.0
-	k8s.io/cli-runtime v0.34.3
-	k8s.io/client-go v0.34.3
+	k8s.io/cli-runtime v0.35.0
+	k8s.io/client-go v0.35.0
 )
 
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
-	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.12.2 // indirect
@@ -25,7 +24,6 @@ require (
 	github.com/go-openapi/jsonpointer v0.21.1 // indirect
 	github.com/go-openapi/jsonreference v0.21.0 // indirect
 	github.com/go-openapi/swag v0.23.1 // indirect
-	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
