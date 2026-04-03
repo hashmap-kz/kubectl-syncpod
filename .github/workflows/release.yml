@@ -11,12 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -28,5 +28,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.HM_GITHUB_TOKEN }}
 
+      # TODO: uncomment when PR is approved
       # - name: Update new version in krew-index
       #   uses: rajatjindal/krew-release-bot@v0.0.47
