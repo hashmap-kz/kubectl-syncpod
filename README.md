@@ -70,6 +70,15 @@ The CLI then:
 
 ## Installation
 
+### Using `krew` (coming soon, PR is on review)
+
+1. Install the [Krew](https://krew.sigs.k8s.io/docs/user-guide/setup/) plugin manager if you haven’t already.
+2. Run the following command:
+
+```bash
+kubectl krew install syncpod
+```
+
 ### Homebrew installation
 
 ```bash
