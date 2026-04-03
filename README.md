@@ -175,16 +175,16 @@ Behavior:
 
 | Feature                                   | `kubectl cp`                   | `kubectl exec`         | `kubectl-syncpod` (SFTP mode)         |
 |-------------------------------------------|--------------------------------|------------------------|---------------------------------------|
-| Uses sidecar or helper pod                | X                              | X                      | V                                     |
-| Works with PVCs                           | ! Only if mounted in container | ! Manual path required | V Helper pod mounts PVC               |
-| Requires tools in container (`tar`, `sh`) | V                              | V                      | X (uses `sshd` in helper pod)         |
-| Supports `readOnlyRootFilesystem` pods    | X                              | X                      | V                                     |
-| Works on `distroless`/`scratch` images    | X                              | X                      | V                                     |
-| Affects main application container        | V                              | V                      | X                                     |
-| Requires container to run as root         | Often yes                      | Often yes              | X or configurable via helper pod spec |
-| Safe for production workloads             | ! Risky                        | ! Risky                | V (safe for read)                     |
-| Auto-cleans after sync                    | X                              | X                      | V                                     |
-| Supports concurrent transfers             | X                              | X                      | V (parallel SFTP workers)             |
+| Uses sidecar or helper pod                | -                              | -                      | +                                     |
+| Works with PVCs                           | ! Only if mounted in container | ! Manual path required | + Helper pod mounts PVC               |
+| Requires tools in container (`tar`, `sh`) | +                              | +                      | - (uses `sshd` in helper pod)         |
+| Supports `readOnlyRootFilesystem` pods    | -                              | -                      | +                                     |
+| Works on `distroless`/`scratch` images    | -                              | -                      | +                                     |
+| Affects main application container        | +                              | +                      | -                                     |
+| Requires container to run as root         | Often yes                      | Often yes              | - or configurable via helper pod spec |
+| Safe for production workloads             | ! Risky                        | ! Risky                | + (safe for read)                     |
+| Auto-cleans after sync                    | -                              | -                      | +                                     |
+| Supports concurrent transfers             | -                              | -                      | + (parallel SFTP workers)             |
 | Performance on large file trees           | - Slow                         | - Slow                 | + Fast (streaming + concurrency)      |
 
 ---
