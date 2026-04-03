@@ -70,7 +70,7 @@ The CLI then:
 
 ## Installation
 
-### Using `krew` (coming soon, [PR](https://github.com/kubernetes-sigs/krew-index/pull/4639) is on review)
+### Using `krew` (coming soon, [PR](https://github.com/kubernetes-sigs/krew-index/pull/5547) is on review)
 
 1. Install the [Krew](https://krew.sigs.k8s.io/docs/user-guide/setup/) plugin manager if you haven’t already.
 2. Run the following command:
