@@ -28,6 +28,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.HM_GITHUB_TOKEN }}
 
-      # TODO: uncomment when PR is approved - https://github.com/kubernetes-sigs/krew-index/pull/4639
+      # TODO: uncomment when PR is approved
+      # https://github.com/kubernetes-sigs/krew-index/pull/4639
+      # https://github.com/kubernetes-sigs/krew-index/pull/5547
       # - name: Update new version in krew-index
       #   uses: rajatjindal/krew-release-bot@v0.0.47
