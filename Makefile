@@ -38,3 +38,7 @@ snapshot:
 test-cov:
 	go test -coverprofile=$(COV_REPORT) ./...
 	go tool cover -html=$(COV_REPORT)
+
+.PHONY: test-integ
+test-integ: build
+	KUBECTL_SYNCPOD_BIN=./bin/kubectl-syncpod rm -rf test/integration/bin && mv bin/ test/integration && go test ./test/integration -tags=integration -v

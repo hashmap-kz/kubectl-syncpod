@@ -22,8 +22,20 @@ import (
 )
 
 const (
-	helperImage = "alpine" // TODO: configure
+	helperImage = "alpine:3.23.3" // TODO: configure
 	objName     = "syncpod-bab9e5b1-eaa7-4b3b-964e-103f0a4f8cc3"
+	runCmd      = `
+apk update;
+apk add openssh;
+mkdir -p /root/.ssh;
+echo "${PUB_KEY}" > /root/.ssh/authorized_keys;
+chmod 600 /root/.ssh/authorized_keys;
+echo "PasswordAuthentication no" >> /etc/ssh/sshd_config;
+echo "ChallengeResponseAuthentication no" >> /etc/ssh/sshd_config;
+echo "PermitRootLogin prohibit-password" >> /etc/ssh/sshd_config;
+ssh-keygen -A;
+/usr/sbin/sshd -D -p 2525;
+`
 )
 
 var (
@@ -166,19 +178,10 @@ func createHelperPod(
 			RestartPolicy:         corev1.RestartPolicyNever,
 			Containers: []corev1.Container{
 				{
-					Name:  objName,
-					Image: helperImage,
-					Command: []string{"sh", "-c", `
-  apk update && apk add openssh &&
-  mkdir -p /root/.ssh &&
-  echo "${PUB_KEY}" > /root/.ssh/authorized_keys &&
-  chmod 600 /root/.ssh/authorized_keys &&
-  echo "PasswordAuthentication no" >> /etc/ssh/sshd_config &&
-  echo "ChallengeResponseAuthentication no" >> /etc/ssh/sshd_config &&
-  echo "PermitRootLogin prohibit-password" >> /etc/ssh/sshd_config &&
-  ssh-keygen -A &&
-  /usr/sbin/sshd -D -p 2525
-`},
+					Name:            objName,
+					Image:           helperImage,
+					ImagePullPolicy: corev1.PullIfNotPresent,
+					Command:         []string{"sh", "-c", runCmd},
 
 					VolumeMounts: []corev1.VolumeMount{
 						{

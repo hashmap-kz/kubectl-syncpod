@@ -1,0 +1,67 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: &app distroless
+  namespace: pgrwl-test
+  labels:
+    app: *app
+spec:
+  type: NodePort
+  ports:
+    - name: *app
+      port: 8080
+      targetPort: 8080
+      nodePort: 30266
+  selector:
+    app: *app
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: distroless-data
+  namespace: pgrwl-test
+spec:
+  # NOTE: replace with pvc you're using in your infra.
+  storageClassName: standard
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: &app distroless
+  namespace: pgrwl-test
+  labels:
+    app: *app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: *app
+  template:
+    metadata:
+      labels:
+        app: *app
+    spec:
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: distroless-data
+            readOnly: false
+      containers:
+        - name: *app
+          image: "localhost:5000/distroless:latest"
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          resources: {}
+          volumeMounts:
+            - mountPath: /tmp
+              name: storage
