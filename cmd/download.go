@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 
+	"github.com/hashmap-kz/kubectl-syncpod/internal/pipe"
+
 	"github.com/hashmap-kz/kubectl-syncpod/internal/dto"
 
 	"github.com/spf13/cobra"
@@ -11,13 +13,7 @@ import (
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 )
 
-type downloadRunOpts struct {
-	configFlags *genericclioptions.ConfigFlags
-	streams     genericiooptions.IOStreams
-	o           *dto.DownloadOptions
-}
-
-func newDownloadCmd(ctx context.Context, streams genericiooptions.IOStreams) *cobra.Command {
+func newDownloadCmd(ctx context.Context, _ genericiooptions.IOStreams) *cobra.Command {
 	cfg := genericclioptions.NewConfigFlags(true)
 	downloadOptions := dto.DownloadOptions{}
 
@@ -37,10 +33,16 @@ kubectl syncpod download \
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			return runDownload(ctx, &downloadRunOpts{
-				configFlags: cfg,
-				streams:     streams,
-				o:           &downloadOptions,
+			downloadOptions.Namespace = pipe.ResolveNamespace(cfg)
+			return pipe.Run(ctx, &pipe.RunOpts{
+				Mode:      "download",
+				PVC:       downloadOptions.PVC,
+				Namespace: downloadOptions.Namespace,
+				Remote:    downloadOptions.Src,
+				Local:     downloadOptions.Dst,
+				MountPath: downloadOptions.MountPath,
+				Workers:   downloadOptions.Workers,
+				ObjName:   pipe.NewObjName(),
 			})
 		},
 	}
@@ -59,17 +61,4 @@ kubectl syncpod download \
 
 	cfg.AddFlags(cmd.Flags())
 	return cmd
-}
-
-func runDownload(ctx context.Context, opts *downloadRunOpts) error {
-	return run(ctx, &RunOpts{
-		Mode:      "download",
-		PVC:       opts.o.PVC,
-		Namespace: resolveNamespace(opts.configFlags),
-		Remote:    opts.o.Src,
-		Local:     opts.o.Dst,
-		MountPath: opts.o.MountPath,
-		Workers:   opts.o.Workers,
-		ObjName:   newObjName(),
-	})
 }

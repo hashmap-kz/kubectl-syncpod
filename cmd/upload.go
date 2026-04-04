@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 
+	"github.com/hashmap-kz/kubectl-syncpod/internal/pipe"
+
 	"github.com/hashmap-kz/kubectl-syncpod/internal/dto"
 
 	"github.com/spf13/cobra"
@@ -11,13 +13,7 @@ import (
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 )
 
-type uploadRunOpts struct {
-	configFlags *genericclioptions.ConfigFlags
-	streams     genericiooptions.IOStreams
-	o           *dto.UploadOptions
-}
-
-func newUploadCmd(ctx context.Context, streams genericiooptions.IOStreams) *cobra.Command {
+func newUploadCmd(ctx context.Context, _ genericiooptions.IOStreams) *cobra.Command {
 	cfg := genericclioptions.NewConfigFlags(true)
 	uploadOptions := dto.UploadOptions{}
 
@@ -37,10 +33,18 @@ kubectl syncpod upload \
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			return runUpload(ctx, &uploadRunOpts{
-				configFlags: cfg,
-				streams:     streams,
-				o:           &uploadOptions,
+			uploadOptions.Namespace = pipe.ResolveNamespace(cfg)
+			return pipe.Run(ctx, &pipe.RunOpts{
+				Mode:           "upload",
+				PVC:            uploadOptions.PVC,
+				Namespace:      uploadOptions.Namespace,
+				Local:          uploadOptions.Src,
+				Remote:         uploadOptions.Dst,
+				MountPath:      uploadOptions.MountPath,
+				Workers:        uploadOptions.Workers,
+				AllowOverwrite: uploadOptions.AllowOverwrite,
+				Owner:          uploadOptions.Owner,
+				ObjName:        pipe.NewObjName(),
 			})
 		},
 	}
@@ -61,19 +65,4 @@ kubectl syncpod upload \
 
 	cfg.AddFlags(cmd.Flags())
 	return cmd
-}
-
-func runUpload(ctx context.Context, runOpts *uploadRunOpts) error {
-	return run(ctx, &RunOpts{
-		Mode:           "upload",
-		PVC:            runOpts.o.PVC,
-		Namespace:      resolveNamespace(runOpts.configFlags),
-		Local:          runOpts.o.Src,
-		Remote:         runOpts.o.Dst,
-		MountPath:      runOpts.o.MountPath,
-		Workers:        runOpts.o.Workers,
-		AllowOverwrite: runOpts.o.AllowOverwrite,
-		Owner:          runOpts.o.Owner,
-		ObjName:        newObjName(),
-	})
 }

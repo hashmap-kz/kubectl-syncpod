@@ -1,4 +1,4 @@
-package cmd
+package pipe
 
 import (
 	"context"
@@ -12,8 +12,6 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 
 	"github.com/hashmap-kz/kubectl-syncpod/internal/clients"
-
-	"github.com/hashmap-kz/kubectl-syncpod/internal/pipe"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -65,7 +63,7 @@ type RunOpts struct {
 	ObjName        string
 }
 
-func run(ctx context.Context, opts *RunOpts) error {
+func Run(ctx context.Context, opts *RunOpts) error {
 	objName := opts.ObjName
 	if strings.TrimSpace(objName) == "" {
 		return fmt.Errorf("(internal-error). object-name for pod was not set")
@@ -134,7 +132,7 @@ func run(ctx context.Context, opts *RunOpts) error {
 		}
 	}()
 
-	jobOpts := &pipe.JobOpts{
+	jobOpts := &JobOpts{
 		Host:           node.addr,
 		Port:           int(port),
 		Remote:         filepath.ToSlash(opts.Remote),
@@ -151,9 +149,9 @@ func run(ctx context.Context, opts *RunOpts) error {
 	}
 	switch opts.Mode {
 	case "upload":
-		return pipe.Upload(ctx, jobOpts)
+		return Upload(ctx, jobOpts)
 	case "download":
-		return pipe.Download(ctx, jobOpts)
+		return Download(ctx, jobOpts)
 	default:
 		return fmt.Errorf("unknown mode: %s", opts.Mode)
 	}
@@ -416,7 +414,7 @@ func labels(objName string) map[string]string {
 	}
 }
 
-func resolveNamespace(cfg *genericclioptions.ConfigFlags) string {
+func ResolveNamespace(cfg *genericclioptions.ConfigFlags) string {
 	namespace := "default"
 	if cfg.Namespace != nil && strings.TrimSpace(*cfg.Namespace) != "" {
 		namespace = *cfg.Namespace
@@ -435,6 +433,6 @@ func joinErrors(errs []error) error {
 	return errors.NewBadRequest(strings.Join(msgs, "\n"))
 }
 
-func newObjName() string {
+func NewObjName() string {
 	return "syncpod-" + uuid.NewString()
 }
