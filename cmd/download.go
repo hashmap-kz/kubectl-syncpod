@@ -9,23 +9,23 @@ import (
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 )
 
-type downloadOptions struct {
-	MountPath string
-	PVC       string
-	Workers   int
-	Dst       string
-	Src       string
+type downloadOpts struct {
+	mountPath string
+	pvc       string
+	workers   int
+	dst       string
+	src       string
 }
 
 type downloadRunOpts struct {
 	configFlags *genericclioptions.ConfigFlags
 	streams     genericiooptions.IOStreams
-	opts        downloadOptions
+	o           downloadOpts
 }
 
 func newDownloadCmd(ctx context.Context, streams genericiooptions.IOStreams) *cobra.Command {
 	cfg := genericclioptions.NewConfigFlags(true)
-	downloadOptions := downloadOptions{}
+	downloadOptions := downloadOpts{}
 
 	cmd := &cobra.Command{
 		Use:   "download",
@@ -46,16 +46,16 @@ kubectl syncpod download \
 			return runDownload(ctx, &downloadRunOpts{
 				configFlags: cfg,
 				streams:     streams,
-				opts:        downloadOptions,
+				o:           downloadOptions,
 			})
 		},
 	}
 
-	cmd.Flags().IntVarP(&downloadOptions.Workers, "workers", "w", 4, "Concurrent file workers")
-	cmd.Flags().StringVar(&downloadOptions.MountPath, "mount-path", "", "Mount path inside helper pod")
-	cmd.Flags().StringVar(&downloadOptions.PVC, "pvc", "", "PVC name")
-	cmd.Flags().StringVar(&downloadOptions.Src, "src", "", "Source path inside mount")
-	cmd.Flags().StringVar(&downloadOptions.Dst, "dst", "", "Local destination path")
+	cmd.Flags().IntVarP(&downloadOptions.workers, "workers", "w", 4, "Concurrent file workers")
+	cmd.Flags().StringVar(&downloadOptions.mountPath, "mount-path", "", "Mount path inside helper pod")
+	cmd.Flags().StringVar(&downloadOptions.pvc, "pvc", "", "PVC name")
+	cmd.Flags().StringVar(&downloadOptions.src, "src", "", "Source path inside mount")
+	cmd.Flags().StringVar(&downloadOptions.dst, "dst", "", "Local destination path")
 
 	for _, rf := range []string{"mount-path", "pvc", "src", "dst"} {
 		if err := cmd.MarkFlagRequired(rf); err != nil {
@@ -67,16 +67,16 @@ kubectl syncpod download \
 	return cmd
 }
 
-func runDownload(ctx context.Context, opts *downloadRunOpts) error {
-	namespace := resolveNamespace(opts.configFlags)
+func runDownload(ctx context.Context, runOpts *downloadRunOpts) error {
+	namespace := resolveNamespace(runOpts.configFlags)
 	return run(ctx, &RunOpts{
 		Mode:      "download",
-		PVC:       opts.opts.PVC,
+		PVC:       runOpts.o.pvc,
 		Namespace: namespace,
-		Remote:    opts.opts.Src,
-		Local:     opts.opts.Dst,
-		MountPath: opts.opts.MountPath,
-		Workers:   opts.opts.Workers,
+		Remote:    runOpts.o.src,
+		Local:     runOpts.o.dst,
+		MountPath: runOpts.o.mountPath,
+		Workers:   runOpts.o.workers,
 		ObjName:   newObjName(),
 	})
 }
