@@ -20,7 +20,11 @@ nodes:
       - containerPort: 30266
         hostPort: 30266
         protocol: TCP
-      # rmq UI
+      # rmq1 UI
+      - containerPort: 30267
+        hostPort: 30267
+        protocol: TCP
+      # rmq2 UI
       - containerPort: 30267
         hostPort: 30267
         protocol: TCP
