@@ -1,6 +1,6 @@
 package dto
 
-type UploadOptions struct {
+type UploadOpts struct {
 	Namespace      string
 	MountPath      string
 	PVC            string
@@ -11,7 +11,7 @@ type UploadOptions struct {
 	Owner          string
 }
 
-type UploadSTSOptions struct {
+type UploadSTSOpts struct {
 	Namespace      string
 	Src            string
 	VolumeWorkers  int

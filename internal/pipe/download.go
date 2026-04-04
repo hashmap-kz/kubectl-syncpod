@@ -9,12 +9,14 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/hashmap-kz/kubectl-syncpod/internal/dto"
+
 	"github.com/hashmap-kz/kubectl-syncpod/internal/clients"
 
 	"github.com/pkg/sftp"
 )
 
-func Download(ctx context.Context, opts *JobOpts) error {
+func Download(ctx context.Context, opts *dto.JobOpts) error {
 	slog.Info("waiting while SSHD is ready")
 	if err := waitForSSHReady(opts.KeyPair, opts.Host, opts.Port, sshWaitTimeout); err != nil {
 		return err
@@ -55,8 +57,8 @@ func Download(ctx context.Context, opts *JobOpts) error {
 	return err
 }
 
-func getFilesToDownload(client *sftp.Client, remotePath, localPath string) ([]workerJob, error) {
-	var jobs []workerJob
+func getFilesToDownload(client *sftp.Client, remotePath, localPath string) ([]dto.WorkerJob, error) {
+	var jobs []dto.WorkerJob
 	walker := client.Walk(remotePath)
 	for walker.Step() {
 		if err := walker.Err(); err != nil {
@@ -67,7 +69,7 @@ func getFilesToDownload(client *sftp.Client, remotePath, localPath string) ([]wo
 			return nil, err
 		}
 		localFilePath := filepath.Join(localPath, relPath)
-		jobs = append(jobs, workerJob{
+		jobs = append(jobs, dto.WorkerJob{
 			RemotePath: walker.Path(),
 			LocalPath:  localFilePath,
 			IsDir:      walker.Stat().IsDir(),
@@ -91,7 +93,7 @@ func downloadFiles(ctx context.Context, client *sftp.Client, remotePath, localPa
 		slog.Int("files", len(files)),
 	)
 
-	filesChan := make(chan workerJob, len(files))
+	filesChan := make(chan dto.WorkerJob, len(files))
 	errorChan := make(chan error, len(files))
 	var wg sync.WaitGroup
 
@@ -137,7 +139,7 @@ func downloadFiles(ctx context.Context, client *sftp.Client, remotePath, localPa
 	return lastErr
 }
 
-func downloadFile(client *sftp.Client, jb workerJob) error {
+func downloadFile(client *sftp.Client, jb dto.WorkerJob) error {
 	remotePath := filepath.ToSlash(jb.RemotePath)
 	localPath := filepath.ToSlash(jb.LocalPath)
 

@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 
+	"github.com/hashmap-kz/kubectl-syncpod/internal/kub"
+
 	"github.com/hashmap-kz/kubectl-syncpod/internal/pipe"
 
 	"github.com/hashmap-kz/kubectl-syncpod/internal/dto"
@@ -15,7 +17,7 @@ import (
 
 func newDownloadCmd(ctx context.Context, _ genericiooptions.IOStreams) *cobra.Command {
 	cfg := genericclioptions.NewConfigFlags(true)
-	downloadOptions := dto.DownloadOptions{}
+	downloadOptions := dto.DownloadOpts{}
 
 	cmd := &cobra.Command{
 		Use:   "download",
@@ -33,8 +35,8 @@ kubectl syncpod download \
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			downloadOptions.Namespace = pipe.ResolveNamespace(cfg)
-			return pipe.Run(ctx, &pipe.RunOpts{
+			downloadOptions.Namespace = kub.ResolveNamespace(cfg)
+			return pipe.Run(ctx, &dto.RunOpts{
 				Mode:      "download",
 				PVC:       downloadOptions.PVC,
 				Namespace: downloadOptions.Namespace,
@@ -42,7 +44,7 @@ kubectl syncpod download \
 				Local:     downloadOptions.Dst,
 				MountPath: downloadOptions.MountPath,
 				Workers:   downloadOptions.Workers,
-				ObjName:   pipe.NewObjName(),
+				ObjName:   kub.NewObjName(),
 			})
 		},
 	}

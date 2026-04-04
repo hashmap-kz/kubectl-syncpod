@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hashmap-kz/kubectl-syncpod/internal/dto"
+
 	"k8s.io/client-go/tools/remotecommand"
 
 	"github.com/pkg/errors"
@@ -21,7 +23,7 @@ import (
 	"github.com/pkg/sftp"
 )
 
-func Upload(ctx context.Context, opts *JobOpts) error {
+func Upload(ctx context.Context, opts *dto.JobOpts) error {
 	slog.Info("waiting while SSHD is ready")
 	if err := waitForSSHReady(opts.KeyPair, opts.Host, opts.Port, sshWaitTimeout); err != nil {
 		return err
@@ -116,7 +118,7 @@ func renameRemoteDirIfExists(client *sftp.Client, remotePath string) error {
 	return nil
 }
 
-func runChownInPod(ctx context.Context, opts *JobOpts, targetPath string) error {
+func runChownInPod(ctx context.Context, opts *dto.JobOpts, targetPath string) error {
 	cmd := []string{"chown", "-R", opts.Owner, targetPath}
 
 	slog.Info("exec chown",
@@ -163,8 +165,8 @@ func runChownInPod(ctx context.Context, opts *JobOpts, targetPath string) error 
 	return nil
 }
 
-func getFilesToUpload(client *sftp.Client, localPath, remotePath string, allowOverwrite bool) ([]workerJob, error) {
-	var jobs []workerJob
+func getFilesToUpload(client *sftp.Client, localPath, remotePath string, allowOverwrite bool) ([]dto.WorkerJob, error) {
+	var jobs []dto.WorkerJob
 
 	err := filepath.WalkDir(localPath, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -186,7 +188,7 @@ func getFilesToUpload(client *sftp.Client, localPath, remotePath string, allowOv
 			return fmt.Errorf("overwrite is forbidden, file already exists: %s", target)
 		}
 
-		jobs = append(jobs, workerJob{
+		jobs = append(jobs, dto.WorkerJob{
 			LocalPath:  path,
 			RemotePath: target,
 			IsDir:      isDir,
@@ -226,7 +228,7 @@ func uploadFiles(ctx context.Context, client *sftp.Client, localPath, remotePath
 		slog.Int("files", len(files)),
 	)
 
-	jobs := make(chan workerJob, len(files))
+	jobs := make(chan dto.WorkerJob, len(files))
 	errCh := make(chan error, len(files))
 	var wg sync.WaitGroup
 
@@ -266,7 +268,7 @@ func uploadFiles(ctx context.Context, client *sftp.Client, localPath, remotePath
 	return lastErr
 }
 
-func uploadFile(client *sftp.Client, jb workerJob) error {
+func uploadFile(client *sftp.Client, jb dto.WorkerJob) error {
 	localPath := filepath.ToSlash(jb.LocalPath)
 	remotePath := filepath.ToSlash(jb.RemotePath)
 
