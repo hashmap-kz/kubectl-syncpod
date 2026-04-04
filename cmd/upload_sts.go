@@ -14,26 +14,25 @@ import (
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 )
 
-type uploadSTSOpts struct {
-	namespace      string
-	src            string
-	volumeWorkers  int
-	fileWorkers    int
-	allowOverwrite bool
-	owner          string
-	skipMissing    bool
-	stsName        string
+type uploadSTSOptions struct {
+	Namespace      string
+	Src            string
+	VolumeWorkers  int
+	FileWorkers    int
+	AllowOverwrite bool
+	Owner          string
+	SkipMissing    bool
 }
 
 type uploadSTSRunOpts struct {
 	configFlags *genericclioptions.ConfigFlags
 	streams     genericiooptions.IOStreams
-	o           uploadSTSOpts
+	opts        uploadSTSOptions
 }
 
 func newUploadSTSCmd(ctx context.Context, streams genericiooptions.IOStreams) *cobra.Command {
 	cfg := genericclioptions.NewConfigFlags(true)
-	opts := uploadSTSOpts{}
+	opts := uploadSTSOptions{}
 
 	cmd := &cobra.Command{
 		Use:   "upload-sts",
@@ -47,24 +46,22 @@ kubectl syncpod upload-sts rabbitmq \
 `,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		Args:          cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			opts.namespace = resolveNamespace(cfg)
-			opts.stsName = args[0]
-			return runUploadSTS(ctx, &uploadSTSRunOpts{
+			opts.Namespace = resolveNamespace(cfg)
+			return runUploadSTS(ctx, args[0], &uploadSTSRunOpts{
 				configFlags: cfg,
 				streams:     streams,
-				o:           opts,
+				opts:        opts,
 			})
 		},
 	}
 
-	cmd.Flags().StringVar(&opts.src, "src", "", "Local source root, e.g. ./backup")
-	cmd.Flags().IntVar(&opts.volumeWorkers, "volume-workers", 2, "Concurrent PVC upload jobs")
-	cmd.Flags().IntVar(&opts.fileWorkers, "file-workers", 2, "Concurrent file workers per PVC")
-	cmd.Flags().BoolVar(&opts.allowOverwrite, "allow-overwrite", false, "Allow overwrite of existing target volume contents")
-	cmd.Flags().StringVar(&opts.owner, "owner", "", "Optional owner (uid:gid or user:group)")
-	cmd.Flags().BoolVar(&opts.skipMissing, "skip-missing", false, "Skip missing local pod/volume directories instead of failing")
+	cmd.Flags().StringVar(&opts.Src, "src", "", "Local source root, e.g. ./backup")
+	cmd.Flags().IntVar(&opts.VolumeWorkers, "volume-workers", 2, "Concurrent PVC upload jobs")
+	cmd.Flags().IntVar(&opts.FileWorkers, "file-workers", 2, "Concurrent file workers per PVC")
+	cmd.Flags().BoolVar(&opts.AllowOverwrite, "allow-overwrite", false, "Allow overwrite of existing target volume contents")
+	cmd.Flags().StringVar(&opts.Owner, "owner", "", "Optional owner (uid:gid or user:group)")
+	cmd.Flags().BoolVar(&opts.SkipMissing, "skip-missing", false, "Skip missing local pod/volume directories instead of failing")
 
 	//nolint:errcheck
 	_ = cmd.MarkFlagRequired("src")
@@ -73,23 +70,25 @@ kubectl syncpod upload-sts rabbitmq \
 	return cmd
 }
 
-func runUploadSTS(ctx context.Context, runOpts *uploadSTSRunOpts) error {
-	manifestPath := filepath.Join(runOpts.o.src, "manifest.json")
+func runUploadSTS(ctx context.Context, stsName string, ropts *uploadSTSRunOpts) error {
+	manifestPath := filepath.Join(ropts.opts.Src, "manifest.json")
 	if _, err := os.Stat(manifestPath); err == nil {
 		return runUploadSTSFromManifest(
 			ctx,
-			runOpts.o.namespace,
-			runOpts.o.stsName,
-			runOpts.o.src,
-			runOpts.o.volumeWorkers,
-			runOpts.o.fileWorkers,
-			runOpts.o.allowOverwrite,
-			runOpts.o.owner,
-			runOpts.o.skipMissing,
+			ropts.opts.Namespace,
+			stsName,
+			ropts.opts.Src,
+			ropts.opts.VolumeWorkers,
+			ropts.opts.FileWorkers,
+			ropts.opts.AllowOverwrite,
+			ropts.opts.Owner,
+			ropts.opts.SkipMissing,
 		)
 	}
 	return fmt.Errorf("cannot upload as no manifest given")
 }
+
+// restore sts
 
 func runUploadSTSFromManifest(
 	ctx context.Context,
