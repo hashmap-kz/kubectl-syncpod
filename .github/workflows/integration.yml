@@ -1,5 +1,5 @@
 ---
-name: CI
+name: Integration tests
 
 on:
   push:
@@ -42,14 +42,6 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Ensure gofmt
-        run: test -z "$(gofmt -s -d .)"
-        shell: bash
-
-      - name: Ensure go.mod is already tidied
-        run: go mod tidy && git diff --no-patch --exit-code
-        shell: bash
-
       - name: Run unit tests
-        run: go test -v -race ./...
+        run: make test-integ
         shell: bash

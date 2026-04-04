@@ -41,4 +41,8 @@ test-cov:
 
 .PHONY: test-integ
 test-integ: build
-	KUBECTL_SYNCPOD_BIN=./bin/kubectl-syncpod rm -rf test/integration/bin && mv bin/ test/integration && go test ./test/integration -tags=integration -v
+	KUBECTL_SYNCPOD_BIN=./bin/kubectl-syncpod \
+	rm -rf test/integration/bin \
+	&& (cd test/integration/environ && make restart) \
+	&& mv bin/ test/integration \
+	&& go test ./test/integration -tags=integration -v
