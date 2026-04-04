@@ -1,6 +1,7 @@
 package dto
 
 type UploadOptions struct {
+	Namespace      string
 	MountPath      string
 	PVC            string
 	Workers        int

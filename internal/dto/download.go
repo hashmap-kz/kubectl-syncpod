@@ -1,6 +1,7 @@
 package dto
 
 type DownloadOptions struct {
+	Namespace string
 	MountPath string
 	PVC       string
 	Workers   int
