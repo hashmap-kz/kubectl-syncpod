@@ -148,6 +148,7 @@ func runUpload(ctx context.Context, opts *uploadRunOpts) error {
 		Workers:        opts.opts.Workers,
 		AllowOverwrite: opts.opts.AllowOverwrite,
 		Owner:          opts.opts.Owner,
+		ObjName:        newObjName(),
 	})
 }
 
