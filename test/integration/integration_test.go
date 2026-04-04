@@ -1,5 +1,3 @@
-//go:build integration
-
 package integration_test
 
 import (
@@ -244,4 +242,95 @@ func TestIntegration_FailureStillCleansResources(t *testing.T) {
 
 	require.Error(t, err)
 	env.AssertNoSyncpodResourcesLeft()
+}
+
+func TestIntegration_DistrolessAlreadyDeployed(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	env := &testEnv{
+		t:         t,
+		ctx:       ctx,
+		Namespace: "pgrwl-test",
+		BinPath:   mustFindBinary(t),
+	}
+
+	assertKubectlObjectExists(t, env, "pvc", "distroless-data")
+	waitDeploymentReady(t, env, "distroless")
+
+	srcDir := t.TempDir()
+	restoreDir := t.TempDir()
+
+	writeTestTree(t, srcDir, map[string]string{
+		"payload/a.txt":            "hello",
+		"payload/nested/b.txt":     "world",
+		"payload/empty.txt":        "",
+		"payload/spaced name.txt":  "with spaces",
+		"payload/unicode-файл.txt": "unicode ok",
+	})
+
+	want := buildLocalTreeMap(t, filepath.Join(srcDir, "payload"))
+
+	remoteDst := "syncpod-distroless-test"
+
+	env.RunSyncpod(
+		"upload",
+		"--namespace", env.Namespace,
+		"--pvc", "distroless-data",
+		"--mount-path", "/tmp",
+		"--src", filepath.Join(srcDir, "payload"),
+		"--dst", remoteDst,
+		"--workers", "4",
+	)
+
+	gotRemote := env.ReadRemoteTree("distroless-data", "/tmp/"+remoteDst)
+	assertTreeMapsEqual(t, want, gotRemote)
+
+	env.RunSyncpod(
+		"download",
+		"--namespace", env.Namespace,
+		"--pvc", "distroless-data",
+		"--mount-path", "/tmp",
+		"--src", remoteDst,
+		"--dst", restoreDir,
+		"--workers", "4",
+	)
+
+	gotLocal := buildLocalTreeMap(t, restoreDir)
+	assertTreeMapsEqual(t, want, gotLocal)
+
+	waitDeploymentReady(t, env, "distroless")
+}
+
+func assertKubectlObjectExists(t *testing.T, env *testEnv, kind, name string) {
+	t.Helper()
+
+	_, err := env.kubectlCombined(
+		"-n", env.Namespace,
+		"get", kind, name,
+	)
+	require.NoError(t, err, "expected %s/%s to exist in namespace %s", kind, name, env.Namespace)
+}
+
+func waitDeploymentReady(t *testing.T, env *testEnv, name string) {
+	t.Helper()
+
+	_, err := env.kubectlCombined(
+		"-n", env.Namespace,
+		"rollout", "status",
+		"deployment/"+name,
+		"--timeout=180s",
+	)
+	if err == nil {
+		return
+	}
+
+	out, _ := env.kubectlCombined("-n", env.Namespace, "get", "deploy", name, "-o", "wide")
+	t.Log(out)
+	out, _ = env.kubectlCombined("-n", env.Namespace, "get", "pods", "-o", "wide")
+	t.Log(out)
+	out, _ = env.kubectlCombined("-n", env.Namespace, "get", "events", "--sort-by=.lastTimestamp")
+	t.Log(out)
+
+	require.NoError(t, err)
 }
