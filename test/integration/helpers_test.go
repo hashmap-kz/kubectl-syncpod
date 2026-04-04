@@ -560,3 +560,51 @@ func randomText(n int) string {
 	}
 	return string(b)
 }
+
+func (e *testEnv) WaitDeploymentReady(name string) {
+	e.t.Helper()
+
+	_, err := e.kubectlCombined(
+		"-n", e.Namespace,
+		"rollout", "status",
+		"deployment/"+name,
+		"--timeout=180s",
+	)
+	if err == nil {
+		return
+	}
+
+	out, _ := e.kubectlCombined("-n", e.Namespace, "describe", "deployment", name)
+	e.t.Log(out)
+	out, _ = e.kubectlCombined("-n", e.Namespace, "get", "pods", "-o", "wide")
+	e.t.Log(out)
+	out, _ = e.kubectlCombined("-n", e.Namespace, "get", "events", "--sort-by=.lastTimestamp")
+	e.t.Log(out)
+
+	require.NoError(e.t, err)
+}
+
+func (e *testEnv) AssertDeploymentReady(name string) {
+	e.t.Helper()
+
+	out := e.kubectl(
+		"-n", e.Namespace,
+		"get", "deployment", name,
+		"-o", "jsonpath={.status.readyReplicas}",
+	)
+	assert.Equal(e.t, "1", strings.TrimSpace(out))
+}
+
+func (e *testEnv) AssertServiceResponds(name string, port string) {
+	e.t.Helper()
+
+	out := e.kubectl(
+		"-n", e.Namespace,
+		"run", "curl-check",
+		"--rm", "-i", "--restart=Never",
+		"--image=curlimages/curl:8.8.0",
+		"--",
+		"curl", "-fsS", fmt.Sprintf("http://%s:%s", name, port),
+	)
+	e.t.Log(out)
+}
