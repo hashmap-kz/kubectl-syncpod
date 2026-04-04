@@ -46,27 +46,49 @@ testing, migration, or recovery.
 
 Basic Scenarios:
 
-- [X] Download backup from PVC for verification / restore
-- [X] Sync files between PVCs and local environment
-- [X] Testing PVC mount behavior
-- [X] CI/CD pipelines to prepare volume data
-
-### How It Works
-
-`kubectl-syncpod` spins up a **temporary helper pod** that:
-
-- Mounts your target PVC
-- Runs an `sshd` server with an in-memory public key
-- Listens on a randomized NodePort
-- Accepts connections only via a secure, ephemeral SSH private key (never written to disk)
-
-The CLI then:
-
-- Uses an in-memory SFTP client to **recursively transfer files**
-- Skips files that are **already present and match by SHA-256**
-- Cleans up the helper pod and service automatically
+- Download backup from PVC for verification / restore
+- Sync files between PVCs and local environment
+- Testing PVC mount behavior
+- CI/CD pipelines to prepare volume data
 
 ---
+
+## Example CLI Usage
+
+### Upload with safe rename and chown:
+
+```bash
+kubectl-syncpod upload \
+  --namespace pgrwl-test \
+  --pvc postgres-data \
+  --mount-path=/var/lib/postgresql/data \
+  --src=backups \
+  --dst=pgdata-new \
+  --allow-overwrite \
+  --owner="999:999"
+```
+
+Behavior:
+
+- `/var/lib/postgresql/data/pgdata-new` -> renamed if exists
+- `backups/*` -> uploaded to `pgdata-new/`
+- Ownership set to `999:999` inside pod
+
+### Download remote directory:
+
+```bash
+kubectl-syncpod download \
+  --namespace pgrwl-test \
+  --pvc postgres-data \
+  --mount-path=/var/lib/postgresql/data \
+  --src=pgdata-new \
+  --dst=backups-copy
+```
+
+Behavior:
+
+- `/var/lib/postgresql/data/pgdata-new/*` -> downloaded to `./backups-copy/` on local machine
+- Preserves directory structure
 
 ## Installation
 
@@ -118,7 +140,7 @@ curl -LO https://github.com/hashmap-kz/kubectl-syncpod/releases/latest/download/
 sudo dpkg -i kubectl-syncpod_linux_amd64.deb
 ```
 
-#### Apline Linux
+#### Alpine Linux
 
 ```
 apk update && apk add --no-cache bash curl
@@ -128,64 +150,40 @@ apk add kubectl-syncpod_linux_amd64.apk --allow-untrusted
 
 ---
 
----
+## Execution Flow
 
-## Example CLI Usage
+`kubectl-syncpod` spins up a **temporary helper pod** that:
 
-### Upload with safe rename and chown:
+- Mounts your target PVC
+- Runs an `sshd` server with an in-memory public key
+- Listens on a randomized NodePort
+- Accepts connections only via a secure, ephemeral SSH private key (never written to disk)
 
-```bash
-kubectl-syncpod upload \
-  --namespace pgrwl-test \
-  --pvc postgres-data \
-  --mount-path=/var/lib/postgresql/data \
-  --src=backups \
-  --dst=pgdata-new \
-  --allow-overwrite \
-  --owner="999:999"
-```
+The CLI then:
 
-Behavior:
+- Uses an in-memory SFTP client to **recursively transfer files**
+- Skips files that are **already present and match by SHA-256**
+- Cleans up the helper pod and service automatically
 
-- `/var/lib/postgresql/data/pgdata-new` -> renamed if exists
-- `backups/*` -> uploaded to `pgdata-new/`
-- Ownership set to `999:999` inside pod
-
----
-
-### Download remote directory:
-
-```bash
-kubectl-syncpod download \
-  --namespace pgrwl-test \
-  --pvc postgres-data \
-  --mount-path=/var/lib/postgresql/data \
-  --src=pgdata-new \
-  --dst=backups-copy
-```
-
-Behavior:
-
-- `/var/lib/postgresql/data/pgdata-new/*` -> downloaded to `./backups-copy/` on local machine
-- Preserves directory structure
+![kubectl-syncpod](docs/assets/flow-v1.svg)
 
 ---
 
 ## Comparison Table
 
-| Feature                                   | `kubectl cp`                   | `kubectl exec`         | `kubectl-syncpod` (SFTP mode)         |
-|-------------------------------------------|--------------------------------|------------------------|---------------------------------------|
-| Uses sidecar or helper pod                | -                              | -                      | +                                     |
-| Works with PVCs                           | ! Only if mounted in container | ! Manual path required | + Helper pod mounts PVC               |
-| Requires tools in container (`tar`, `sh`) | +                              | +                      | - (uses `sshd` in helper pod)         |
-| Supports `readOnlyRootFilesystem` pods    | -                              | -                      | +                                     |
-| Works on `distroless`/`scratch` images    | -                              | -                      | +                                     |
-| Affects main application container        | +                              | +                      | -                                     |
-| Requires container to run as root         | Often yes                      | Often yes              | - or configurable via helper pod spec |
-| Safe for production workloads             | ! Risky                        | ! Risky                | + (safe for read)                     |
-| Auto-cleans after sync                    | -                              | -                      | +                                     |
-| Supports concurrent transfers             | -                              | -                      | + (parallel SFTP workers)             |
-| Performance on large file trees           | - Slow                         | - Slow                 | + Fast (streaming + concurrency)      |
+| Feature                                   | `kubectl cp`                    | `kubectl exec`          | `kubectl-syncpod` (SFTP mode)         |
+|-------------------------------------------|---------------------------------|-------------------------|---------------------------------------|
+| Uses sidecar or helper pod                | ❌                               | ❌                       | ✅                                     |
+| Works with PVCs                           | ⚠️ Only if mounted in container | ⚠️ Manual path required | ✅ Helper pod mounts PVC               |
+| Requires tools in container (`tar`, `sh`) | ✅                               | ✅                       | ❌ (uses `sshd` in helper pod)         |
+| Supports `readOnlyRootFilesystem` pods    | ❌                               | ❌                       | ✅                                     |
+| Works on `distroless`/`scratch` images    | ❌                               | ❌                       | ✅                                     |
+| Affects main application container        | ✅                               | ✅                       | ❌                                     |
+| Requires container to run as root         | Often yes                       | Often yes               | ❌ or configurable via helper pod spec |
+| Safe for production workloads             | ⚠️ Risky                        | ⚠️ Risky                | ✅ (safe for read)                     |
+| Auto-cleans after sync                    | ❌                               | ❌                       | ✅                                     |
+| Supports concurrent transfers             | ❌                               | ❌                       | ✅ (parallel SFTP workers)             |
+| Performance on large file trees           | 🐢 Slow                         | 🐢 Slow                 | 🚀 Fast (streaming + concurrency)     |
 
 ---
 

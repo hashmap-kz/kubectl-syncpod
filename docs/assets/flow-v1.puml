@@ -1,0 +1,61 @@
+@startuml
+
+title "kubectl-syncpod - PVC File Transfer Flow"
+footer Fast, safe file transfer to and from Kubernetes PVCs
+header "v1"
+scale max 860 height
+
+skinparam TitleFontSize 28
+
+box "Local Machine" #LightBlue
+  actor "User / CLI" as User #DeepSkyBlue
+  participant "kubectl-syncpod" as CLI #LightSkyBlue
+  participant "Local Filesystem" as LocalFS #AliceBlue
+end box
+
+box "Kubernetes Cluster" #HoneyDew
+  participant "Kubernetes API" as KubeAPI #LightYellow
+  participant "Helper Pod" as Helper #Khaki
+  participant "Helper sshd / SFTP" as SFTP #Wheat
+  participant "Mounted PVC" as PVC #Lavender
+end box
+
+box "Target Workload" #AliceBlue
+  participant "Application Pod\n(distroless / scratch / regular)" as App #LightCyan
+end box
+
+group #LightYellow Session Setup
+  User -> CLI: Run upload / download
+  CLI -> KubeAPI: Create helper Pod + Service
+  KubeAPI -> Helper: Mount PVC
+  Helper -> SFTP: Start SSH/SFTP server
+  CLI -> SFTP: Connect (ephemeral key)
+end
+
+group #Lavender Upload Flow
+  CLI -> LocalFS: Scan files
+  CLI -> SFTP: Upload (parallel workers)
+  SFTP -> PVC: Write data
+  CLI -> Helper: Optional chown (exec)
+end
+
+group #MistyRose Download Flow
+  CLI -> SFTP: List / walk files
+  SFTP -> PVC: Read data
+  CLI -> LocalFS: Restore files
+end
+
+group #HoneyDew Workload Isolation
+  note right of App
+    Application container is untouched
+    No shell, tar, or ssh required
+  end note
+  App --> PVC: Uses same data
+end
+
+group #Thistle Cleanup
+  CLI -> SFTP: Close session
+  CLI -> KubeAPI: Delete helper Pod + Service
+end
+
+@enduml
