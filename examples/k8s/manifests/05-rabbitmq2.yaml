@@ -2,14 +2,14 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: rmq-test
+  name: rmq2-test
 
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: rabbitmq
-  namespace: rmq-test
+  namespace: rmq2-test
 spec:
   type: NodePort
   selector:
@@ -17,18 +17,18 @@ spec:
   ports:
     - port: 15672
       targetPort: 15672
-      nodePort: 30267
+      nodePort: 30268
       name: management
     - port: 5672
       targetPort: 5672
-      nodePort: 31518
       name: amqp
+
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: rabbitmq
-  namespace: rmq-test
+  namespace: rmq2-test
 spec:
   serviceName: rabbitmq
   replicas: 3
