@@ -9,6 +9,26 @@ _High-Speed File Transfer to and from Kubernetes PVCs_
 [![Go Version](https://img.shields.io/github/go-mod/go-version/hashmap-kz/kubectl-syncpod)](https://github.com/hashmap-kz/kubectl-syncpod/blob/master/go.mod#L3)
 [![Latest Release](https://img.shields.io/github/v/release/hashmap-kz/kubectl-syncpod)](https://github.com/hashmap-kz/kubectl-syncpod/releases/latest)
 
+## Table of Contents
+
+- [About](#about)
+    - [Features](#features)
+    - [Typical Use Cases](#typical-use-cases)
+- [Example CLI Usage](#example-cli-usage)
+    - [Upload with safe rename and chown](#upload-with-safe-rename-and-chown)
+    - [Download remote directory](#download-remote-directory)
+- [Installation](#installation)
+    - [Using krew](#using-krew-coming-soon)
+    - [Homebrew installation](#homebrew-installation)
+    - [Manual Installation](#manual-installation)
+        - [Example installation script](#example-installation-script-for-unix-based-os-_requirements-tar-curl-jq_)
+    - [Package-Based installation](#package-based-installation-suitable-in-cicd)
+        - [Debian](#debian)
+        - [Alpine Linux](#alpine-linux)
+- [Execution Flow](#execution-flow)
+- [Comparison Table](#comparison-table)
+- [License](#license)
+
 ---
 
 ## About
@@ -55,7 +75,7 @@ Basic Scenarios:
 
 ## Example CLI Usage
 
-### Upload with safe rename and chown:
+### Upload local directory to PVC:
 
 ```bash
 kubectl-syncpod upload \
@@ -70,11 +90,11 @@ kubectl-syncpod upload \
 
 Behavior:
 
-- `/var/lib/postgresql/data/pgdata-new` -> renamed if exists
-- `backups/*` -> uploaded to `pgdata-new/`
-- Ownership set to `999:999` inside pod
+- If `/var/lib/postgresql/data/pgdata-new` exists -> it is renamed (safe overwrite)
+- Contents of `backups/` are uploaded into `/var/lib/postgresql/data/pgdata-new/`
+- File ownership is set to `999:999` inside the helper pod
 
-### Download remote directory:
+### Download directory from PVC to local machine:
 
 ```bash
 kubectl-syncpod download \
@@ -87,12 +107,15 @@ kubectl-syncpod download \
 
 Behavior:
 
-- `/var/lib/postgresql/data/pgdata-new/*` -> downloaded to `./backups-copy/` on local machine
-- Preserves directory structure
+- Contents of `/var/lib/postgresql/data/pgdata-new/` are downloaded
+- Files are written to `./backups-copy/`
+- Directory structure is preserved
 
 ## Installation
 
-### Using `krew` (coming soon, [PR](https://github.com/kubernetes-sigs/krew-index/pull/5547) is on review)
+### Using `krew` (coming soon)
+
+**Coming soon, [PR](https://github.com/kubernetes-sigs/krew-index/pull/5547) is on review**
 
 1. Install the [Krew](https://krew.sigs.k8s.io/docs/user-guide/setup/) plugin manager if you haven’t already.
 2. Run the following command:
