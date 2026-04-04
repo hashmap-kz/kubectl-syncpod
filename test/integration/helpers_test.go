@@ -608,3 +608,36 @@ func (e *testEnv) AssertServiceResponds(name string, port string) {
 	)
 	e.t.Log(out)
 }
+
+func assertKubectlObjectExists(t *testing.T, env *testEnv, kind, name string) {
+	t.Helper()
+
+	_, err := env.kubectlCombined(
+		"-n", env.Namespace,
+		"get", kind, name,
+	)
+	require.NoError(t, err, "expected %s/%s to exist in namespace %s", kind, name, env.Namespace)
+}
+
+func waitDeploymentReady(t *testing.T, env *testEnv, name string) {
+	t.Helper()
+
+	_, err := env.kubectlCombined(
+		"-n", env.Namespace,
+		"rollout", "status",
+		"deployment/"+name,
+		"--timeout=180s",
+	)
+	if err == nil {
+		return
+	}
+
+	out, _ := env.kubectlCombined("-n", env.Namespace, "get", "deploy", name, "-o", "wide")
+	t.Log(out)
+	out, _ = env.kubectlCombined("-n", env.Namespace, "get", "pods", "-o", "wide")
+	t.Log(out)
+	out, _ = env.kubectlCombined("-n", env.Namespace, "get", "events", "--sort-by=.lastTimestamp")
+	t.Log(out)
+
+	require.NoError(t, err)
+}

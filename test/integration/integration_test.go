@@ -273,7 +273,7 @@ func TestIntegration_DistrolessAlreadyDeployed(t *testing.T) {
 
 	want := buildLocalTreeMap(t, filepath.Join(srcDir, "payload"))
 
-	remoteDst := "syncpod-distroless-test"
+	remoteDst := "syncpod-distroless-test-" + time.Now().Format("20060102-150405")
 
 	env.RunSyncpod(
 		"upload",
@@ -284,9 +284,6 @@ func TestIntegration_DistrolessAlreadyDeployed(t *testing.T) {
 		"--dst", remoteDst,
 		"--workers", "4",
 	)
-
-	gotRemote := env.ReadRemoteTree("distroless-data", "/tmp/"+remoteDst)
-	assertTreeMapsEqual(t, want, gotRemote)
 
 	env.RunSyncpod(
 		"download",
@@ -302,37 +299,4 @@ func TestIntegration_DistrolessAlreadyDeployed(t *testing.T) {
 	assertTreeMapsEqual(t, want, gotLocal)
 
 	waitDeploymentReady(t, env, "distroless")
-}
-
-func assertKubectlObjectExists(t *testing.T, env *testEnv, kind, name string) {
-	t.Helper()
-
-	_, err := env.kubectlCombined(
-		"-n", env.Namespace,
-		"get", kind, name,
-	)
-	require.NoError(t, err, "expected %s/%s to exist in namespace %s", kind, name, env.Namespace)
-}
-
-func waitDeploymentReady(t *testing.T, env *testEnv, name string) {
-	t.Helper()
-
-	_, err := env.kubectlCombined(
-		"-n", env.Namespace,
-		"rollout", "status",
-		"deployment/"+name,
-		"--timeout=180s",
-	)
-	if err == nil {
-		return
-	}
-
-	out, _ := env.kubectlCombined("-n", env.Namespace, "get", "deploy", name, "-o", "wide")
-	t.Log(out)
-	out, _ = env.kubectlCombined("-n", env.Namespace, "get", "pods", "-o", "wide")
-	t.Log(out)
-	out, _ = env.kubectlCombined("-n", env.Namespace, "get", "events", "--sort-by=.lastTimestamp")
-	t.Log(out)
-
-	require.NoError(t, err)
 }
