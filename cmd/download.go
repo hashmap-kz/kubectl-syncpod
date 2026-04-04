@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/hashmap-kz/kubectl-syncpod/internal/kubeapi"
+	"github.com/hashmap-kz/kubectl-syncpod/internal/kub"
 
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -144,7 +144,7 @@ func runDownloadSTS(ctx context.Context, stsName string, ropts *downloadSTSRunOp
 		return err
 	}
 
-	vols, err := kubeapi.DiscoverStatefulSetPVCs(ctx, client, ropts.opts.Namespace, stsName)
+	vols, err := kub.DiscoverStatefulSetPVCs(ctx, client, ropts.opts.Namespace, stsName)
 	if err != nil {
 		return err
 	}
@@ -157,11 +157,11 @@ func runDownloadSTS(ctx context.Context, stsName string, ropts *downloadSTSRunOp
 	}
 
 	type result struct {
-		vol kubeapi.PodVolume
+		vol kub.PodVolume
 		err error
 	}
 
-	jobs := make(chan kubeapi.PodVolume)
+	jobs := make(chan kub.PodVolume)
 	results := make(chan result, len(vols))
 
 	var wg sync.WaitGroup
@@ -208,5 +208,9 @@ func runDownloadSTS(ctx context.Context, stsName string, ropts *downloadSTSRunOp
 	if len(errs) > 0 {
 		return joinErrors(errs)
 	}
-	return nil
+
+	manifest := kub.BuildStatefulSetBackupManifest(ropts.opts.Namespace, stsName, vols)
+	err = kub.WriteStatefulSetBackupManifest(filepath.Join(ropts.opts.Dst, "manifest.json"), manifest)
+
+	return err
 }
