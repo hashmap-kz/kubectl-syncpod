@@ -21,6 +21,10 @@ gen:
 build: gen
 	CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/$(OUTPUT) main.go
 
+.PHONY: build-linux
+build-linux: gen
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/kubectl-syncpod main.go
+
 .PHONY: install
 install: build
 	@echo "Installing bin/$(OUTPUT) to $(INSTALL_DIR)..."
@@ -38,3 +42,11 @@ snapshot:
 test-cov:
 	go test -coverprofile=$(COV_REPORT) ./...
 	go tool cover -html=$(COV_REPORT)
+
+.PHONY: test-integ
+test-integ: build-linux
+	KUBECTL_SYNCPOD_BIN=./bin/kubectl-syncpod \
+	rm -rf test/integration/bin \
+	&& (cd test/integration/environ && make restart) \
+	&& mv bin/ test/integration \
+	&& go test ./test/integration -tags=integration -v

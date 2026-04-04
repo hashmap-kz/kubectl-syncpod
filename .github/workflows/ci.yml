@@ -34,10 +34,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -53,13 +53,3 @@ jobs:
       - name: Run unit tests
         run: go test -v -race ./...
         shell: bash
-
-      # Uncomment these when you're ready to use GoReleaser
-      #
-      # - name: Install GoReleaser
-      #   uses: goreleaser/goreleaser-action@v6
-      #   with:
-      #     install-only: true
-      #
-      # - name: Run GoReleaser (snapshot)
-      #   run: make snapshot
