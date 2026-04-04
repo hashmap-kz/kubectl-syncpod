@@ -4,30 +4,22 @@ import (
 	"context"
 	"log"
 
+	"github.com/hashmap-kz/kubectl-syncpod/internal/dto"
+
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 )
 
-type uploadOptions struct {
-	MountPath      string
-	PVC            string
-	Workers        int
-	Src            string
-	Dst            string
-	AllowOverwrite bool
-	Owner          string
-}
-
 type uploadRunOpts struct {
 	configFlags *genericclioptions.ConfigFlags
 	streams     genericiooptions.IOStreams
-	opts        uploadOptions
+	o           *dto.UploadOptions
 }
 
 func newUploadCmd(ctx context.Context, streams genericiooptions.IOStreams) *cobra.Command {
 	cfg := genericclioptions.NewConfigFlags(true)
-	uploadOptions := uploadOptions{}
+	uploadOptions := dto.UploadOptions{}
 
 	cmd := &cobra.Command{
 		Use:   "upload",
@@ -48,7 +40,7 @@ kubectl syncpod upload \
 			return runUpload(ctx, &uploadRunOpts{
 				configFlags: cfg,
 				streams:     streams,
-				opts:        uploadOptions,
+				o:           &uploadOptions,
 			})
 		},
 	}
@@ -71,18 +63,17 @@ kubectl syncpod upload \
 	return cmd
 }
 
-func runUpload(ctx context.Context, opts *uploadRunOpts) error {
-	namespace := resolveNamespace(opts.configFlags)
+func runUpload(ctx context.Context, runOpts *uploadRunOpts) error {
 	return run(ctx, &RunOpts{
 		Mode:           "upload",
-		PVC:            opts.opts.PVC,
-		Namespace:      namespace,
-		Local:          opts.opts.Src,
-		Remote:         opts.opts.Dst,
-		MountPath:      opts.opts.MountPath,
-		Workers:        opts.opts.Workers,
-		AllowOverwrite: opts.opts.AllowOverwrite,
-		Owner:          opts.opts.Owner,
+		PVC:            runOpts.o.PVC,
+		Namespace:      resolveNamespace(runOpts.configFlags),
+		Local:          runOpts.o.Src,
+		Remote:         runOpts.o.Dst,
+		MountPath:      runOpts.o.MountPath,
+		Workers:        runOpts.o.Workers,
+		AllowOverwrite: runOpts.o.AllowOverwrite,
+		Owner:          runOpts.o.Owner,
 		ObjName:        newObjName(),
 	})
 }
