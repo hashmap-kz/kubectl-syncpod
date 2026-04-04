@@ -1,5 +1,5 @@
 ---
-name: Lint
+name: Integration tests
 
 on:
   push:
@@ -29,21 +29,19 @@ on:
   workflow_dispatch:
 
 jobs:
-  lint:
-    if: ${{ github.event_name == 'push' || !github.event.pull_request.draft }}
-    runs-on: ubuntu-22.04
-
+  ci_job:
+    name: test
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-go@v6
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache: true
 
-      - name: Run golangci-lint
-        if: runner.os == 'Linux'
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: latest
-          skip-cache: true
+      - name: Run unit tests
+        run: make test-integ
+        shell: bash
