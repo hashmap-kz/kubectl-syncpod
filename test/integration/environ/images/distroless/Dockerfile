@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM 1.25.8-alpine3.23 AS builder
+FROM golang:1.25.8-alpine3.23 AS builder
 WORKDIR /app
 COPY .. .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o app
