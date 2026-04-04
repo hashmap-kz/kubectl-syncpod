@@ -9,3 +9,4 @@ set -euo pipefail
 kubectl apply -f manifests/
 kubectl -n pgrwl-test rollout restart sts postgres
 kubectl -n pgrwl-test rollout restart deploy distroless
+kubectl -n rmq-test rollout restart sts rabbitmq

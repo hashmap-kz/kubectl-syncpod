@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"time"
+
+	"github.com/google/uuid"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
 
 	"github.com/hashmap-kz/kubectl-syncpod/internal/clients"
 
@@ -23,8 +27,8 @@ import (
 
 const (
 	helperImage = "alpine:3.23.3" // TODO: configure
-	objName     = "syncpod-bab9e5b1-eaa7-4b3b-964e-103f0a4f8cc3"
-	runCmd      = `
+	// objName     = "syncpod-bab9e5b1-eaa7-4b3b-964e-103f0a4f8cc3"
+	runCmd = `
 apk update;
 apk add openssh;
 mkdir -p /root/.ssh;
@@ -58,22 +62,16 @@ type RunOpts struct {
 	Workers        int
 	AllowOverwrite bool
 	Owner          string
+	ObjName        string
 }
 
 func run(ctx context.Context, opts *RunOpts) error {
+	objName := opts.ObjName
+
 	// config routine
 
 	slog.Info("init k8s config")
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		config, err = clientcmd.BuildConfigFromFlags("", clientcmd.RecommendedHomeFile)
-		if err != nil {
-			return fmt.Errorf("load kubeconfig: %w", err)
-		}
-	}
-
-	slog.Info("init k8s client")
-	client, err := kubernetes.NewForConfig(config)
+	config, client, err := initConfigAndClient()
 	if err != nil {
 		return err
 	}
@@ -97,7 +95,7 @@ func run(ctx context.Context, opts *RunOpts) error {
 	// pod
 
 	slog.Info("creating pod")
-	err = createHelperPod(ctx, client, ed25519Keys, opts.Namespace, opts.PVC, opts.MountPath, node.name)
+	err = createHelperPod(ctx, client, ed25519Keys, opts.Namespace, opts.PVC, opts.MountPath, node.name, opts.ObjName)
 	if err != nil {
 		return err
 	}
@@ -105,7 +103,7 @@ func run(ctx context.Context, opts *RunOpts) error {
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := deleteHelperPod(cleanupCtx, client, opts.Namespace); err != nil {
+		if err := deleteHelperPod(cleanupCtx, client, opts.Namespace, opts.ObjName); err != nil {
 			slog.Error("cannot delete pod", slog.Any("err", err))
 		} else {
 			slog.Info("pod deleted", slog.String("name", objName))
@@ -115,7 +113,7 @@ func run(ctx context.Context, opts *RunOpts) error {
 	// service
 
 	slog.Info("creating service")
-	port, err := createNodePortService(ctx, client, opts.Namespace)
+	port, err := createNodePortService(ctx, client, opts.Namespace, opts.ObjName)
 	if err != nil {
 		return err
 	}
@@ -164,13 +162,13 @@ func createHelperPod(
 	ctx context.Context,
 	client *kubernetes.Clientset,
 	keyPair *clients.KeyPair,
-	namespace, pvc, mountPath, pvcNodeName string,
+	namespace, pvc, mountPath, pvcNodeName, objName string,
 ) error {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      objName,
 			Namespace: namespace,
-			Labels:    labels(),
+			Labels:    labels(objName),
 		},
 		Spec: corev1.PodSpec{
 			NodeName:              pvcNodeName,
@@ -233,16 +231,16 @@ func createHelperPod(
 	return nil
 }
 
-func createNodePortService(ctx context.Context, client *kubernetes.Clientset, namespace string) (int32, error) {
+func createNodePortService(ctx context.Context, client *kubernetes.Clientset, namespace, objName string) (int32, error) {
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      objName,
 			Namespace: namespace,
-			Labels:    labels(),
+			Labels:    labels(objName),
 		},
 		Spec: corev1.ServiceSpec{
 			Type:     corev1.ServiceTypeNodePort,
-			Selector: labels(),
+			Selector: labels(objName),
 			Ports: []corev1.ServicePort{
 				{
 					Name:       "ssh",
@@ -282,7 +280,7 @@ func deleteHelperService(ctx context.Context, client *kubernetes.Clientset, name
 	return nil
 }
 
-func deleteHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace string) error {
+func deleteHelperPod(ctx context.Context, client *kubernetes.Clientset, namespace, objName string) error {
 	err := client.CoreV1().Pods(namespace).Delete(ctx, objName, metav1.DeleteOptions{
 		GracePeriodSeconds: &gracePeriodSeconds,
 	})
@@ -386,10 +384,54 @@ func getPVCNodeName(ctx context.Context, client *kubernetes.Clientset, namespace
 	return "", fmt.Errorf("unable to determine node for PVC %q", pvcName)
 }
 
+// client
+
+func initConfigAndClient() (*rest.Config, *kubernetes.Clientset, error) {
+	slog.Info("init k8s config")
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		config, err = clientcmd.BuildConfigFromFlags("", clientcmd.RecommendedHomeFile)
+		if err != nil {
+			return nil, nil, fmt.Errorf("load kubeconfig: %w", err)
+		}
+	}
+
+	slog.Info("init k8s client")
+	client, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return config, client, nil
+}
+
 // utils
 
-func labels() map[string]string {
+func labels(objName string) map[string]string {
 	return map[string]string{
 		"app": objName,
 	}
+}
+
+func resolveNamespace(cfg *genericclioptions.ConfigFlags) string {
+	namespace := "default"
+	if cfg.Namespace != nil && strings.TrimSpace(*cfg.Namespace) != "" {
+		namespace = *cfg.Namespace
+	}
+	return namespace
+}
+
+func joinErrors(errs []error) error {
+	if len(errs) == 0 {
+		return nil
+	}
+	msgs := make([]string, 0, len(errs))
+	for _, err := range errs {
+		msgs = append(msgs, err.Error())
+	}
+	return errors.NewBadRequest(strings.Join(msgs, "\n"))
+}
+
+func newObjName() string {
+	return "syncpod-" + uuid.NewString()
 }
