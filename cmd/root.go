@@ -34,5 +34,7 @@ func NewRootCmd(ctx context.Context, streams genericiooptions.IOStreams) *cobra.
 	rootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
 	rootCmd.AddCommand(newDownloadCmd(ctx, streams))
 	rootCmd.AddCommand(newUploadCmd(ctx, streams))
+	rootCmd.AddCommand(newDownloadSTSCmd(ctx, streams))
+	rootCmd.AddCommand(newUploadSTSCmd(ctx, streams))
 	return rootCmd
 }
