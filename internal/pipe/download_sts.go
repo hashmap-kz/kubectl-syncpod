@@ -11,7 +11,7 @@ import (
 	"github.com/hashmap-kz/kubectl-syncpod/internal/kub"
 )
 
-func RunDownloadSTS(ctx context.Context, runOpts *dto.DownloadSTSOptions) error {
+func RunDownloadSTS(ctx context.Context, runOpts *dto.DownloadSTSOpts) error {
 	_, client, err := initConfigAndClient()
 	if err != nil {
 		return err
@@ -45,7 +45,7 @@ func RunDownloadSTS(ctx context.Context, runOpts *dto.DownloadSTSOptions) error 
 			for vol := range jobs {
 				localDst := filepath.Join(runOpts.Dst, vol.PodName, vol.VolumeName)
 
-				err := Run(ctx, &RunOpts{
+				err := Run(ctx, &dto.RunOpts{
 					Mode:      "download",
 					PVC:       vol.PVCName,
 					Namespace: runOpts.Namespace,
@@ -53,7 +53,7 @@ func RunDownloadSTS(ctx context.Context, runOpts *dto.DownloadSTSOptions) error 
 					Local:     localDst,
 					MountPath: vol.MountPath,
 					Workers:   runOpts.FileWorkers,
-					ObjName:   NewObjName(),
+					ObjName:   kub.NewObjName(),
 				})
 
 				results <- result{vol: vol, err: err}

@@ -12,19 +12,12 @@ import (
 	"github.com/hashmap-kz/kubectl-syncpod/internal/kub"
 )
 
-type RestoreTarget struct {
-	Manifest kub.StatefulSetVolume
-	Current  kub.PodVolume
-	LocalSrc string
-	Warnings []string
+type restoreSource struct {
+	entry    kub.StatefulSetVolume
+	localSrc string
 }
 
-type RestoreSource struct {
-	Entry    kub.StatefulSetVolume
-	LocalSrc string
-}
-
-func RunUploadSTS(ctx context.Context, ropts *dto.UploadSTSOptions) error {
+func RunUploadSTS(ctx context.Context, ropts *dto.UploadSTSOpts) error {
 	manifestPath := filepath.Join(ropts.Src, "manifest.json")
 	if _, err := os.Stat(manifestPath); err == nil {
 		return runUploadSTSFromManifest(ctx, ropts)
@@ -32,7 +25,7 @@ func RunUploadSTS(ctx context.Context, ropts *dto.UploadSTSOptions) error {
 	return fmt.Errorf("cannot upload as no manifest given")
 }
 
-func runUploadSTSFromManifest(ctx context.Context, d *dto.UploadSTSOptions) error {
+func runUploadSTSFromManifest(ctx context.Context, d *dto.UploadSTSOpts) error {
 	manifestPath := filepath.Join(d.Src, "manifest.json")
 
 	manifest, err := kub.ReadStatefulSetBackupManifest(manifestPath)
@@ -47,17 +40,17 @@ func runUploadSTSFromManifest(ctx context.Context, d *dto.UploadSTSOptions) erro
 		)
 	}
 
-	sources, err := ValidateManifestSources(d.Src, manifest, d.SkipMissing)
+	sources, err := validateManifestSources(d.Src, manifest, d.SkipMissing)
 	if err != nil {
 		return fmt.Errorf("validate manifest sources: %w", err)
 	}
 
 	type result struct {
-		src RestoreSource
+		src restoreSource
 		err error
 	}
 
-	jobs := make(chan RestoreSource)
+	jobs := make(chan restoreSource)
 	results := make(chan result, len(sources))
 
 	var wg sync.WaitGroup
@@ -67,17 +60,17 @@ func runUploadSTSFromManifest(ctx context.Context, d *dto.UploadSTSOptions) erro
 			defer wg.Done()
 
 			for src := range jobs {
-				err := Run(ctx, &RunOpts{
+				err := Run(ctx, &dto.RunOpts{
 					Mode:           "upload",
-					PVC:            src.Entry.PVCName,
+					PVC:            src.entry.PVCName,
 					Namespace:      d.Namespace,
-					Local:          src.LocalSrc,
+					Local:          src.localSrc,
 					Remote:         ".",
-					MountPath:      src.Entry.MountPath,
+					MountPath:      src.entry.MountPath,
 					Workers:        d.FileWorkers,
 					AllowOverwrite: d.AllowOverwrite,
 					Owner:          d.Owner,
-					ObjName:        NewObjName(),
+					ObjName:        kub.NewObjName(),
 				})
 
 				results <- result{
@@ -103,10 +96,10 @@ func runUploadSTSFromManifest(ctx context.Context, d *dto.UploadSTSOptions) erro
 		if r.err != nil {
 			errs = append(errs, fmt.Errorf(
 				"%s/%s (%s <- %s): %w",
-				r.src.Entry.PodName,
-				r.src.Entry.VolumeName,
-				r.src.Entry.PVCName,
-				r.src.LocalSrc,
+				r.src.entry.PodName,
+				r.src.entry.VolumeName,
+				r.src.entry.PVCName,
+				r.src.localSrc,
 				r.err,
 			))
 		}
@@ -119,12 +112,12 @@ func runUploadSTSFromManifest(ctx context.Context, d *dto.UploadSTSOptions) erro
 	return nil
 }
 
-func ValidateManifestSources(
+func validateManifestSources(
 	srcRoot string,
 	manifest *kub.StatefulSetBackupManifest,
 	skipMissing bool,
-) ([]RestoreSource, error) {
-	var result []RestoreSource
+) ([]restoreSource, error) {
+	var result []restoreSource
 	var errs []error
 
 	for _, entry := range manifest.Entries {
@@ -166,9 +159,9 @@ func ValidateManifestSources(
 			continue
 		}
 
-		result = append(result, RestoreSource{
-			Entry:    entry,
-			LocalSrc: localSrc,
+		result = append(result, restoreSource{
+			entry:    entry,
+			localSrc: localSrc,
 		})
 	}
 
@@ -177,10 +170,10 @@ func ValidateManifestSources(
 	}
 
 	sort.Slice(result, func(i, j int) bool {
-		if result[i].Entry.Ordinal != result[j].Entry.Ordinal {
-			return result[i].Entry.Ordinal < result[j].Entry.Ordinal
+		if result[i].entry.Ordinal != result[j].entry.Ordinal {
+			return result[i].entry.Ordinal < result[j].entry.Ordinal
 		}
-		return result[i].Entry.VolumeName < result[j].Entry.VolumeName
+		return result[i].entry.VolumeName < result[j].entry.VolumeName
 	})
 
 	return result, nil

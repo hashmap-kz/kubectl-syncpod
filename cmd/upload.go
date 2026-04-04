@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 
+	"github.com/hashmap-kz/kubectl-syncpod/internal/kub"
+
 	"github.com/hashmap-kz/kubectl-syncpod/internal/pipe"
 
 	"github.com/hashmap-kz/kubectl-syncpod/internal/dto"
@@ -15,7 +17,7 @@ import (
 
 func newUploadCmd(ctx context.Context, _ genericiooptions.IOStreams) *cobra.Command {
 	cfg := genericclioptions.NewConfigFlags(true)
-	uploadOptions := dto.UploadOptions{}
+	uploadOptions := dto.UploadOpts{}
 
 	cmd := &cobra.Command{
 		Use:   "upload",
@@ -33,8 +35,8 @@ kubectl syncpod upload \
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			uploadOptions.Namespace = pipe.ResolveNamespace(cfg)
-			return pipe.Run(ctx, &pipe.RunOpts{
+			uploadOptions.Namespace = kub.ResolveNamespace(cfg)
+			return pipe.Run(ctx, &dto.RunOpts{
 				Mode:           "upload",
 				PVC:            uploadOptions.PVC,
 				Namespace:      uploadOptions.Namespace,
@@ -44,7 +46,7 @@ kubectl syncpod upload \
 				Workers:        uploadOptions.Workers,
 				AllowOverwrite: uploadOptions.AllowOverwrite,
 				Owner:          uploadOptions.Owner,
-				ObjName:        pipe.NewObjName(),
+				ObjName:        kub.NewObjName(),
 			})
 		},
 	}

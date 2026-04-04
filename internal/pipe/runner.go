@@ -8,8 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"github.com/hashmap-kz/kubectl-syncpod/internal/dto"
 
 	"github.com/hashmap-kz/kubectl-syncpod/internal/clients"
 
@@ -50,20 +49,7 @@ type nodeInfo struct {
 	addr string
 }
 
-type RunOpts struct {
-	Mode           string
-	PVC            string
-	Namespace      string
-	Remote         string
-	Local          string
-	MountPath      string
-	Workers        int
-	AllowOverwrite bool
-	Owner          string
-	ObjName        string
-}
-
-func Run(ctx context.Context, opts *RunOpts) error {
+func Run(ctx context.Context, opts *dto.RunOpts) error {
 	objName := opts.ObjName
 	if strings.TrimSpace(objName) == "" {
 		return fmt.Errorf("(internal-error). object-name for pod was not set")
@@ -132,7 +118,7 @@ func Run(ctx context.Context, opts *RunOpts) error {
 		}
 	}()
 
-	jobOpts := &JobOpts{
+	jobOpts := &dto.JobOpts{
 		Host:           node.addr,
 		Port:           int(port),
 		Remote:         filepath.ToSlash(opts.Remote),
@@ -412,27 +398,4 @@ func labels(objName string) map[string]string {
 	return map[string]string{
 		"app": objName,
 	}
-}
-
-func ResolveNamespace(cfg *genericclioptions.ConfigFlags) string {
-	namespace := "default"
-	if cfg.Namespace != nil && strings.TrimSpace(*cfg.Namespace) != "" {
-		namespace = *cfg.Namespace
-	}
-	return namespace
-}
-
-func joinErrors(errs []error) error {
-	if len(errs) == 0 {
-		return nil
-	}
-	msgs := make([]string, 0, len(errs))
-	for _, err := range errs {
-		msgs = append(msgs, err.Error())
-	}
-	return errors.NewBadRequest(strings.Join(msgs, "\n"))
-}
-
-func NewObjName() string {
-	return "syncpod-" + uuid.NewString()
 }

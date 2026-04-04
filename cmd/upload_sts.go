@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 
+	"github.com/hashmap-kz/kubectl-syncpod/internal/kub"
+
 	"github.com/hashmap-kz/kubectl-syncpod/internal/dto"
 	"github.com/hashmap-kz/kubectl-syncpod/internal/pipe"
 
@@ -13,7 +15,7 @@ import (
 
 func newUploadSTSCmd(ctx context.Context, _ genericiooptions.IOStreams) *cobra.Command {
 	cfg := genericclioptions.NewConfigFlags(true)
-	uploadSTSOptions := dto.UploadSTSOptions{}
+	uploadSTSOptions := dto.UploadSTSOpts{}
 
 	cmd := &cobra.Command{
 		Use:   "upload-sts",
@@ -29,7 +31,7 @@ kubectl syncpod upload-sts rabbitmq \
 		SilenceErrors: true,
 		Args:          cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			uploadSTSOptions.Namespace = pipe.ResolveNamespace(cfg)
+			uploadSTSOptions.Namespace = kub.ResolveNamespace(cfg)
 			uploadSTSOptions.StsName = args[0]
 			return pipe.RunUploadSTS(ctx, &uploadSTSOptions)
 		},

@@ -2,36 +2,12 @@ package pipe
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-
 	"github.com/hashmap-kz/kubectl-syncpod/internal/clients"
+	"k8s.io/apimachinery/pkg/api/errors"
 )
-
-type workerJob struct {
-	LocalPath  string
-	RemotePath string
-	IsDir      bool
-}
-
-type JobOpts struct {
-	Host           string
-	Port           int
-	Local          string
-	Remote         string
-	MountPath      string
-	Workers        int
-	KeyPair        *clients.KeyPair
-	AllowOverwrite bool
-	ObjName        string
-	Namespace      string
-	Owner          string
-
-	Client     kubernetes.Interface
-	RestConfig *rest.Config
-}
 
 func waitForSSHReady(keyPair *clients.KeyPair, host string, port int, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
@@ -55,4 +31,15 @@ func newSFTPClient(keyPair *clients.KeyPair, host string, port int) (*clients.SF
 		User:      "root",
 		PkeyBytes: privateKeyToPEM,
 	})
+}
+
+func joinErrors(errs []error) error {
+	if len(errs) == 0 {
+		return nil
+	}
+	msgs := make([]string, 0, len(errs))
+	for _, err := range errs {
+		msgs = append(msgs, err.Error())
+	}
+	return errors.NewBadRequest(strings.Join(msgs, "\n"))
 }

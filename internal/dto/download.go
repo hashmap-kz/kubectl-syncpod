@@ -1,6 +1,6 @@
 package dto
 
-type DownloadOptions struct {
+type DownloadOpts struct {
 	Namespace string
 	MountPath string
 	PVC       string
@@ -9,7 +9,7 @@ type DownloadOptions struct {
 	Src       string
 }
 
-type DownloadSTSOptions struct {
+type DownloadSTSOpts struct {
 	Namespace     string
 	Dst           string
 	VolumeWorkers int

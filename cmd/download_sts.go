@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 
+	"github.com/hashmap-kz/kubectl-syncpod/internal/kub"
+
 	"github.com/hashmap-kz/kubectl-syncpod/internal/dto"
 	"github.com/hashmap-kz/kubectl-syncpod/internal/pipe"
 
@@ -13,7 +15,7 @@ import (
 
 func newDownloadSTSCmd(ctx context.Context, _ genericiooptions.IOStreams) *cobra.Command {
 	cfg := genericclioptions.NewConfigFlags(true)
-	downloadSTSOptions := dto.DownloadSTSOptions{}
+	downloadSTSOptions := dto.DownloadSTSOpts{}
 
 	cmd := &cobra.Command{
 		Use:   "download-sts",
@@ -29,7 +31,7 @@ kubectl syncpod download-sts rabbitmq \
 		SilenceErrors: true,
 		Args:          cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			downloadSTSOptions.Namespace = pipe.ResolveNamespace(cfg)
+			downloadSTSOptions.Namespace = kub.ResolveNamespace(cfg)
 			downloadSTSOptions.StsName = args[0]
 			return pipe.RunDownloadSTS(ctx, &downloadSTSOptions)
 		},
