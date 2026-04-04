@@ -19,8 +19,9 @@ func main() {
 	rootCmd := cmd.NewRootCmd(ctx, streams)
 	if err := rootCmd.Execute(); err != nil {
 		slog.Error("error executing command", slog.Any("err", err))
+		stop()
+		//nolint:gocritic
 		os.Exit(1)
-	} else {
-		slog.Info("all jobs completed successfully")
 	}
+	slog.Info("all jobs completed successfully")
 }
