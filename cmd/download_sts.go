@@ -7,28 +7,23 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/hashmap-kz/kubectl-syncpod/internal/dto"
+
 	"github.com/hashmap-kz/kubectl-syncpod/internal/kub"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 )
 
-type downloadSTSOptions struct {
-	Namespace     string
-	Dst           string
-	VolumeWorkers int
-	FileWorkers   int
-}
-
 type downloadSTSRunOpts struct {
 	configFlags *genericclioptions.ConfigFlags
 	streams     genericiooptions.IOStreams
-	opts        downloadSTSOptions
+	o           *dto.DownloadSTSOptions
 }
 
 func newDownloadSTSCmd(ctx context.Context, streams genericiooptions.IOStreams) *cobra.Command {
 	cfg := genericclioptions.NewConfigFlags(true)
-	opts := downloadSTSOptions{}
+	downloadSTSOptions := dto.DownloadSTSOptions{}
 
 	cmd := &cobra.Command{
 		Use:   "download-sts",
@@ -42,19 +37,21 @@ kubectl syncpod download-sts rabbitmq \
 `,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		Args:          cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			opts.Namespace = resolveNamespace(cfg)
-			return runDownloadSTS(ctx, args[0], &downloadSTSRunOpts{
+			downloadSTSOptions.Namespace = resolveNamespace(cfg)
+			downloadSTSOptions.StsName = args[0]
+			return runDownloadSTS(ctx, &downloadSTSRunOpts{
 				configFlags: cfg,
 				streams:     streams,
-				opts:        opts,
+				o:           &downloadSTSOptions,
 			})
 		},
 	}
 
-	cmd.Flags().StringVar(&opts.Dst, "dst", "", "Local destination root")
-	cmd.Flags().IntVar(&opts.VolumeWorkers, "volume-workers", 2, "Concurrent PVC download jobs")
-	cmd.Flags().IntVar(&opts.FileWorkers, "file-workers", 2, "Concurrent file workers per PVC")
+	cmd.Flags().StringVar(&downloadSTSOptions.Dst, "dst", "", "Local destination root")
+	cmd.Flags().IntVar(&downloadSTSOptions.VolumeWorkers, "volume-workers", 2, "Concurrent PVC download jobs")
+	cmd.Flags().IntVar(&downloadSTSOptions.FileWorkers, "file-workers", 2, "Concurrent file workers per PVC")
 	//nolint:errcheck
 	_ = cmd.MarkFlagRequired("dst")
 
@@ -62,21 +59,21 @@ kubectl syncpod download-sts rabbitmq \
 	return cmd
 }
 
-func runDownloadSTS(ctx context.Context, stsName string, ropts *downloadSTSRunOpts) error {
+func runDownloadSTS(ctx context.Context, runOpts *downloadSTSRunOpts) error {
 	_, client, err := initConfigAndClient()
 	if err != nil {
 		return err
 	}
 
-	vols, err := kub.DiscoverStatefulSetPVCs(ctx, client, ropts.opts.Namespace, stsName)
+	vols, err := kub.DiscoverStatefulSetPVCs(ctx, client, runOpts.o.Namespace, runOpts.o.StsName)
 	if err != nil {
 		return err
 	}
 	if len(vols) == 0 {
-		return fmt.Errorf("no PVC-backed volumes found for StatefulSet %q", stsName)
+		return fmt.Errorf("no PVC-backed volumes found for StatefulSet %q", runOpts.o.StsName)
 	}
 
-	if err := os.MkdirAll(ropts.opts.Dst, 0o755); err != nil {
+	if err := os.MkdirAll(runOpts.o.Dst, 0o755); err != nil {
 		return fmt.Errorf("create destination root: %w", err)
 	}
 
@@ -89,21 +86,21 @@ func runDownloadSTS(ctx context.Context, stsName string, ropts *downloadSTSRunOp
 	results := make(chan result, len(vols))
 
 	var wg sync.WaitGroup
-	for i := 0; i < ropts.opts.VolumeWorkers; i++ {
+	for i := 0; i < runOpts.o.VolumeWorkers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for vol := range jobs {
-				localDst := filepath.Join(ropts.opts.Dst, vol.PodName, vol.VolumeName)
+				localDst := filepath.Join(runOpts.o.Dst, vol.PodName, vol.VolumeName)
 
 				err := run(ctx, &RunOpts{
 					Mode:      "download",
 					PVC:       vol.PVCName,
-					Namespace: ropts.opts.Namespace,
+					Namespace: runOpts.o.Namespace,
 					Remote:    ".",
 					Local:     localDst,
 					MountPath: vol.MountPath,
-					Workers:   ropts.opts.FileWorkers,
+					Workers:   runOpts.o.FileWorkers,
 					ObjName:   newObjName(),
 				})
 
@@ -133,8 +130,8 @@ func runDownloadSTS(ctx context.Context, stsName string, ropts *downloadSTSRunOp
 		return joinErrors(errs)
 	}
 
-	manifest := kub.BuildStatefulSetBackupManifest(ropts.opts.Namespace, stsName, vols)
-	err = kub.WriteStatefulSetBackupManifest(filepath.Join(ropts.opts.Dst, "manifest.json"), manifest)
+	manifest := kub.BuildStatefulSetBackupManifest(runOpts.o.Namespace, runOpts.o.StsName, vols)
+	err = kub.WriteStatefulSetBackupManifest(filepath.Join(runOpts.o.Dst, "manifest.json"), manifest)
 
 	return err
 }

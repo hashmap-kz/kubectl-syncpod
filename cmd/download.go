@@ -4,28 +4,22 @@ import (
 	"context"
 	"log"
 
+	"github.com/hashmap-kz/kubectl-syncpod/internal/dto"
+
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 )
 
-type downloadOptions struct {
-	MountPath string
-	PVC       string
-	Workers   int
-	Dst       string
-	Src       string
-}
-
 type downloadRunOpts struct {
 	configFlags *genericclioptions.ConfigFlags
 	streams     genericiooptions.IOStreams
-	opts        downloadOptions
+	o           *dto.DownloadOptions
 }
 
 func newDownloadCmd(ctx context.Context, streams genericiooptions.IOStreams) *cobra.Command {
 	cfg := genericclioptions.NewConfigFlags(true)
-	downloadOptions := downloadOptions{}
+	downloadOptions := dto.DownloadOptions{}
 
 	cmd := &cobra.Command{
 		Use:   "download",
@@ -46,7 +40,7 @@ kubectl syncpod download \
 			return runDownload(ctx, &downloadRunOpts{
 				configFlags: cfg,
 				streams:     streams,
-				opts:        downloadOptions,
+				o:           &downloadOptions,
 			})
 		},
 	}
@@ -68,15 +62,14 @@ kubectl syncpod download \
 }
 
 func runDownload(ctx context.Context, opts *downloadRunOpts) error {
-	namespace := resolveNamespace(opts.configFlags)
 	return run(ctx, &RunOpts{
 		Mode:      "download",
-		PVC:       opts.opts.PVC,
-		Namespace: namespace,
-		Remote:    opts.opts.Src,
-		Local:     opts.opts.Dst,
-		MountPath: opts.opts.MountPath,
-		Workers:   opts.opts.Workers,
+		PVC:       opts.o.PVC,
+		Namespace: resolveNamespace(opts.configFlags),
+		Remote:    opts.o.Src,
+		Local:     opts.o.Dst,
+		MountPath: opts.o.MountPath,
+		Workers:   opts.o.Workers,
 		ObjName:   newObjName(),
 	})
 }
