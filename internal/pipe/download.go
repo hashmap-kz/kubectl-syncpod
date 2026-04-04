@@ -8,15 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/hashmap-kz/kubectl-syncpod/internal/clients"
 
 	"github.com/pkg/sftp"
-)
-
-const (
-	sshWaitTimeout = 30 * time.Second
 )
 
 func Download(ctx context.Context, opts *JobOpts) error {
