@@ -67,6 +67,9 @@ type RunOpts struct {
 
 func run(ctx context.Context, opts *RunOpts) error {
 	objName := opts.ObjName
+	if strings.TrimSpace(objName) == "" {
+		return fmt.Errorf("(internal-error). object-name for pod was not set")
+	}
 
 	// config routine
 
