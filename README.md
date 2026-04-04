@@ -75,6 +75,8 @@ Basic Scenarios:
 
 ## Example CLI Usage
 
+**[`^        back to top        ^`](#table-of-contents)**
+
 ### Upload local directory to PVC:
 
 ```bash
@@ -112,6 +114,8 @@ Behavior:
 - Directory structure is preserved
 
 ## Installation
+
+**[`^        back to top        ^`](#table-of-contents)**
 
 ### Using `krew` (coming soon)
 
@@ -175,6 +179,8 @@ apk add kubectl-syncpod_linux_amd64.apk --allow-untrusted
 
 ## Execution Flow
 
+**[`^        back to top        ^`](#table-of-contents)**
+
 `kubectl-syncpod` spins up a **temporary helper pod** that:
 
 - Mounts your target PVC
@@ -193,6 +199,8 @@ The CLI then:
 ---
 
 ## Comparison Table
+
+**[`^        back to top        ^`](#table-of-contents)**
 
 | Feature                                   | `kubectl cp`                    | `kubectl exec`          | `kubectl-syncpod` (SFTP mode)         |
 |-------------------------------------------|---------------------------------|-------------------------|---------------------------------------|
