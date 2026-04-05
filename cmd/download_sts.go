@@ -13,8 +13,7 @@ import (
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 )
 
-func newDownloadSTSCmd(ctx context.Context, _ genericiooptions.IOStreams) *cobra.Command {
-	cfg := genericclioptions.NewConfigFlags(true)
+func newDownloadSTSCmd(ctx context.Context, cfg *genericclioptions.ConfigFlags, _ genericiooptions.IOStreams) *cobra.Command {
 	downloadSTSOptions := dto.DownloadSTSOpts{}
 
 	cmd := &cobra.Command{
@@ -43,6 +42,5 @@ kubectl syncpod download-sts rabbitmq \
 	//nolint:errcheck
 	_ = cmd.MarkFlagRequired("dst")
 
-	cfg.AddFlags(cmd.Flags())
 	return cmd
 }
