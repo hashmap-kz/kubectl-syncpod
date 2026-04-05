@@ -396,6 +396,7 @@ func initConfigAndClient() (*rest.Config, *kubernetes.Clientset, error) {
 
 func labels(objName string) map[string]string {
 	return map[string]string{
-		"app": objName,
+		"app.kubernetes.io/name":     "kubectl-syncpod",
+		"app.kubernetes.io/instance": objName,
 	}
 }
