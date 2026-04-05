@@ -7,4 +7,3 @@ set -euo pipefail
 )
 
 kubectl apply -f manifests/
-kubectl -n pgrwl-test rollout restart deploy distroless
