@@ -1,0 +1,37 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: distroless-syncpod-test
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: distroless
+  namespace: distroless-syncpod-test
+spec:
+  accessModes: [ ReadWriteOnce ]
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: distroless
+  namespace: distroless-syncpod-test
+spec:
+  restartPolicy: Never
+  containers:
+    - name: distroless
+      image: "localhost:5000/distroless:latest"
+      imagePullPolicy: Always
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: distroless
