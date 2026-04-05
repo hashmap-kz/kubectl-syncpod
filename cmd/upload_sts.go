@@ -13,8 +13,7 @@ import (
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 )
 
-func newUploadSTSCmd(ctx context.Context, _ genericiooptions.IOStreams) *cobra.Command {
-	cfg := genericclioptions.NewConfigFlags(true)
+func newUploadSTSCmd(ctx context.Context, cfg *genericclioptions.ConfigFlags, _ genericiooptions.IOStreams) *cobra.Command {
 	uploadSTSOptions := dto.UploadSTSOpts{}
 
 	cmd := &cobra.Command{
@@ -46,7 +45,5 @@ kubectl syncpod upload-sts rabbitmq \
 
 	//nolint:errcheck
 	_ = cmd.MarkFlagRequired("src")
-	cfg.AddFlags(cmd.Flags())
-
 	return cmd
 }
