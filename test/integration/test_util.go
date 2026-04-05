@@ -17,6 +17,8 @@ import (
 	"testing"
 	"text/template"
 
+	"github.com/hashmap-kz/kubectl-syncpod/internal/kub"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -142,6 +144,13 @@ type statePodManifestOpts struct {
 	MountPath string
 }
 
+type statefulSetManifestOpts struct {
+	Namespace string
+	Name      string
+	MountPath string
+	Replicas  int
+}
+
 var statePodManifestTmpl = template.Must(template.New("pod").Parse(`
 ---
 apiVersion: v1
@@ -184,6 +193,65 @@ func renderStatePodManifest(t *testing.T, data statePodManifestOpts) string {
 	return buf.String()
 }
 
+var statefulSetManifestTmpl = template.Must(template.New("sts").Parse(`
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Name }}
+  namespace: {{ .Namespace }}
+spec:
+  clusterIP: None
+  selector:
+    app: {{ .Name }}
+  ports:
+    - name: tcp
+      port: 80
+      targetPort: 80
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Name }}
+  namespace: {{ .Namespace }}
+spec:
+  serviceName: {{ .Name }}
+  replicas: {{ .Replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Name }}
+    spec:
+      terminationGracePeriodSeconds: 0
+      containers:
+        - name: verifier
+          image: python:3.12-alpine
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "sleep 3600"]
+          volumeMounts:
+            - name: data
+              mountPath: {{ .MountPath }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 1Gi
+`))
+
+func renderStatefulSetManifest(t *testing.T, data statefulSetManifestOpts) string {
+	t.Helper()
+	var buf strings.Builder
+	require.NoError(t, statefulSetManifestTmpl.Execute(&buf, data))
+	return buf.String()
+}
+
 func waitPodReady(t *testing.T, namespace, name string) {
 	t.Helper()
 
@@ -198,6 +266,18 @@ func waitPodReady(t *testing.T, namespace, name string) {
 		return
 	}
 
+	require.NoError(t, err)
+}
+
+func waitStatefulSetReady(t *testing.T, namespace, name string) {
+	t.Helper()
+
+	_, err := runCmd("kubectl",
+		"-n", namespace,
+		"rollout", "status",
+		"statefulset/"+name,
+		"--timeout=180s",
+	)
 	require.NoError(t, err)
 }
 
@@ -400,4 +480,33 @@ func assertNoSyncpodResourcesLeft(t *testing.T, ns string) {
 
 	assert.Empty(t, strings.TrimSpace(podsOut), "expected no syncpod pods left")
 	assert.Empty(t, strings.TrimSpace(svcsOut), "expected no syncpod services left")
+}
+
+// sts helpers
+
+func clearRemoteDir(t *testing.T, ns, pod, root string) {
+	t.Helper()
+
+	execInPod(t, ns, pod, fmt.Sprintf(`
+set -eu
+mkdir -p %q
+find %q -mindepth 1 -delete
+`, root, root))
+}
+
+func readStatefulSetBackupManifest(t *testing.T, path string) *kub.StatefulSetBackupManifest {
+	t.Helper()
+
+	m, err := kub.ReadStatefulSetBackupManifest(path)
+	require.NoError(t, err)
+	return m
+}
+
+func manifestEntryLocalPaths(m *kub.StatefulSetBackupManifest) []string {
+	paths := make([]string, 0, len(m.Entries))
+	for _, entry := range m.Entries {
+		paths = append(paths, entry.LocalPath)
+	}
+	sort.Strings(paths)
+	return paths
 }
