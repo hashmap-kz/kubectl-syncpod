@@ -15,8 +15,7 @@ import (
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 )
 
-func newUploadCmd(ctx context.Context, _ genericiooptions.IOStreams) *cobra.Command {
-	cfg := genericclioptions.NewConfigFlags(true)
+func newUploadCmd(ctx context.Context, cfg *genericclioptions.ConfigFlags, _ genericiooptions.IOStreams) *cobra.Command {
 	uploadOptions := dto.UploadOpts{}
 
 	cmd := &cobra.Command{
@@ -65,6 +64,5 @@ kubectl syncpod upload \
 		}
 	}
 
-	cfg.AddFlags(cmd.Flags())
 	return cmd
 }

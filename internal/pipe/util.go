@@ -16,6 +16,7 @@ func waitForSSHReady(keyPair *clients.KeyPair, host string, port int, timeout ti
 		if err == nil {
 			return client.Close()
 		}
+		time.Sleep(200 * time.Millisecond)
 	}
 	return fmt.Errorf("sshd not ready on %s:%d after %v", host, port, timeout)
 }
