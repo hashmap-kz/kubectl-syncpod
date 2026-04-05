@@ -93,6 +93,17 @@ func newTestEnv(t *testing.T, ctx context.Context, ns string) *testEnv {
 	return env
 }
 
+func newExistingTestEnv(t *testing.T, ctx context.Context, ns string) *testEnv {
+	t.Helper()
+
+	return &testEnv{
+		t:         t,
+		ctx:       ctx,
+		Namespace: ns,
+		BinPath:   mustFindBinary(t),
+	}
+}
+
 func (e *testEnv) Cleanup() {
 	e.t.Helper()
 }
