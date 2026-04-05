@@ -7,10 +7,13 @@ import (
 	"github.com/hashmap-kz/kubectl-syncpod/internal/logger"
 
 	"github.com/spf13/cobra"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 )
 
 func NewRootCmd(ctx context.Context, streams genericiooptions.IOStreams) *cobra.Command {
+	cfg := genericclioptions.NewConfigFlags(true)
+
 	rootCmd := &cobra.Command{
 		Use:          "kubectl syncpod",
 		Short:        "Download/Upload files from a PVC via temporary pod",
@@ -32,9 +35,11 @@ func NewRootCmd(ctx context.Context, streams genericiooptions.IOStreams) *cobra.
 	})
 
 	rootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
-	rootCmd.AddCommand(newDownloadCmd(ctx, streams))
-	rootCmd.AddCommand(newUploadCmd(ctx, streams))
-	rootCmd.AddCommand(newDownloadSTSCmd(ctx, streams))
-	rootCmd.AddCommand(newUploadSTSCmd(ctx, streams))
+	cfg.AddFlags(rootCmd.PersistentFlags())
+
+	rootCmd.AddCommand(newDownloadCmd(ctx, cfg, streams))
+	rootCmd.AddCommand(newUploadCmd(ctx, cfg, streams))
+	rootCmd.AddCommand(newDownloadSTSCmd(ctx, cfg, streams))
+	rootCmd.AddCommand(newUploadSTSCmd(ctx, cfg, streams))
 	return rootCmd
 }

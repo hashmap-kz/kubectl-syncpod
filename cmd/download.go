@@ -15,8 +15,7 @@ import (
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 )
 
-func newDownloadCmd(ctx context.Context, _ genericiooptions.IOStreams) *cobra.Command {
-	cfg := genericclioptions.NewConfigFlags(true)
+func newDownloadCmd(ctx context.Context, cfg *genericclioptions.ConfigFlags, _ genericiooptions.IOStreams) *cobra.Command {
 	downloadOptions := dto.DownloadOpts{}
 
 	cmd := &cobra.Command{
@@ -61,6 +60,5 @@ kubectl syncpod download \
 		}
 	}
 
-	cfg.AddFlags(cmd.Flags())
 	return cmd
 }
