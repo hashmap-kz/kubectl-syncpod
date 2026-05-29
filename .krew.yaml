@@ -7,8 +7,8 @@ spec:
   homepage: https://github.com/hashmap-kz/kubectl-syncpod
   shortDescription: High-Speed File Transfer to and from PVCs
   description: |
-    Small utility that mounts PVCs using a temporary helper pod 
-    and transfers files via high-performance SFTP, without impacting 
+    Small utility that mounts PVCs using a temporary helper pod
+    and transfers files via high-performance SFTP, without impacting
     application containers or requiring in-container tools.
   platforms:
   - selector:
