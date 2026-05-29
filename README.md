@@ -5,7 +5,6 @@ _High-Speed File Transfer to and from Kubernetes PVCs_
 [![License](https://img.shields.io/github/license/hashmap-kz/kubectl-syncpod)](https://github.com/hashmap-kz/kubectl-syncpod/blob/master/LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/hashmap-kz/kubectl-syncpod)](https://goreportcard.com/report/github.com/hashmap-kz/kubectl-syncpod)
 [![Workflow Status](https://img.shields.io/github/actions/workflow/status/hashmap-kz/kubectl-syncpod/ci.yml?branch=master)](https://github.com/hashmap-kz/kubectl-syncpod/actions/workflows/ci.yml?query=branch:master)
-[![GitHub Issues](https://img.shields.io/github/issues/hashmap-kz/kubectl-syncpod)](https://github.com/hashmap-kz/kubectl-syncpod/issues)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/hashmap-kz/kubectl-syncpod)](https://github.com/hashmap-kz/kubectl-syncpod/blob/master/go.mod#L3)
 [![Latest Release](https://img.shields.io/github/v/release/hashmap-kz/kubectl-syncpod)](https://github.com/hashmap-kz/kubectl-syncpod/releases/latest)
 
@@ -18,7 +17,7 @@ _High-Speed File Transfer to and from Kubernetes PVCs_
     - [Upload local directory to PVC](#upload-local-directory-to-pvc)
     - [Download directory from PVC to local machine](#download-directory-from-pvc-to-local-machine)
 - [Installation](#installation)
-    - [Using krew](#using-krew-coming-soon)
+    - [Using krew](#using-krew)
     - [Homebrew installation](#homebrew-installation)
     - [Manual Installation](#manual-installation)
         - [Example installation script](#example-installation-script-for-unix-based-os-_requirements-tar-curl-jq_)
@@ -75,8 +74,6 @@ Basic Scenarios:
 
 ## Example CLI Usage
 
-**[`^        back to top        ^`](#table-of-contents)**
-
 ### Upload local directory to PVC:
 
 ```bash
@@ -115,11 +112,7 @@ Behavior:
 
 ## Installation
 
-**[`^        back to top        ^`](#table-of-contents)**
-
-### Using `krew` (coming soon)
-
-**Coming soon, [PR](https://github.com/kubernetes-sigs/krew-index/pull/5547) is on review**
+### Using `krew`
 
 1. Install the [Krew](https://krew.sigs.k8s.io/docs/user-guide/setup/) plugin manager if you haven’t already.
 2. Run the following command:
@@ -179,8 +172,6 @@ apk add kubectl-syncpod_linux_amd64.apk --allow-untrusted
 
 ## Execution Flow
 
-**[`^        back to top        ^`](#table-of-contents)**
-
 `kubectl-syncpod` spins up a **temporary helper pod** that:
 
 - Mounts your target PVC
@@ -200,21 +191,19 @@ The CLI then:
 
 ## Comparison Table
 
-**[`^        back to top        ^`](#table-of-contents)**
-
-| Feature                                   | `kubectl cp`                    | `kubectl exec`          | `kubectl-syncpod` (SFTP mode)         |
-|-------------------------------------------|---------------------------------|-------------------------|---------------------------------------|
-| Uses sidecar or helper pod                | ❌                               | ❌                       | ✅                                     |
-| Works with PVCs                           | ⚠️ Only if mounted in container | ⚠️ Manual path required | ✅ Helper pod mounts PVC               |
-| Requires tools in container (`tar`, `sh`) | ✅                               | ✅                       | ❌ (uses `sshd` in helper pod)         |
-| Supports `readOnlyRootFilesystem` pods    | ❌                               | ❌                       | ✅                                     |
-| Works on `distroless`/`scratch` images    | ❌                               | ❌                       | ✅                                     |
-| Affects main application container        | ✅                               | ✅                       | ❌                                     |
-| Requires container to run as root         | Often yes                       | Often yes               | ❌ or configurable via helper pod spec |
-| Safe for production workloads             | ⚠️ Risky                        | ⚠️ Risky                | ✅ (safe for read)                     |
-| Auto-cleans after sync                    | ❌                               | ❌                       | ✅                                     |
-| Supports concurrent transfers             | ❌                               | ❌                       | ✅ (parallel SFTP workers)             |
-| Performance on large file trees           | 🐢 Slow                         | 🐢 Slow                 | 🚀 Fast (streaming + concurrency)     |
+| Feature                                   | `kubectl cp`                           | `kubectl exec`                 | `kubectl-syncpod` (SFTP mode)          |
+| ----------------------------------------- | -------------------------------------- | ------------------------------ | -------------------------------------- |
+| Uses sidecar or helper pod                | No                                     | No                             | Yes                                    |
+| Works with PVCs                           | Partial — Only if mounted in container | Partial — Manual path required | Yes — Helper pod mounts PVC            |
+| Requires tools in container (`tar`, `sh`) | Yes                                    | Yes                            | No — uses `sshd` in helper pod         |
+| Supports `readOnlyRootFilesystem` pods    | No                                     | No                             | Yes                                    |
+| Works on `distroless`/`scratch` images    | No                                     | No                             | Yes                                    |
+| Affects main application container        | Yes                                    | Yes                            | No                                     |
+| Requires container to run as root         | Often yes                              | Often yes                      | No or configurable via helper pod spec |
+| Safe for production workloads             | Risky                                  | Risky                          | Yes — safe for read                    |
+| Auto-cleans after sync                    | No                                     | No                             | Yes                                    |
+| Supports concurrent transfers             | No                                     | No                             | Yes — parallel SFTP workers            |
+| Performance on large file trees           | Slow                                   | Slow                           | Fast — streaming + concurrency         |
 
 ---
 
