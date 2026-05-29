@@ -50,7 +50,7 @@ _High-Speed File Transfer to and from Kubernetes PVCs_
 - Concurrent file transfer with worker pool
 - Preserves directory structure
 - Optional automatic `chown` of uploaded files inside the pod (via Kubernetes exec API)
-- Fully based on **SFTP** + **Kubernetes Exec API** — no side effects on other pod processes
+- Fully based on **SFTP** + **Kubernetes Exec API** - no side effects on other pod processes
 
 ### Typical Use Cases
 
@@ -194,16 +194,16 @@ The CLI then:
 | Feature                                   | `kubectl cp`                           | `kubectl exec`                 | `kubectl-syncpod` (SFTP mode)          |
 | ----------------------------------------- | -------------------------------------- | ------------------------------ | -------------------------------------- |
 | Uses sidecar or helper pod                | No                                     | No                             | Yes                                    |
-| Works with PVCs                           | Partial — Only if mounted in container | Partial — Manual path required | Yes — Helper pod mounts PVC            |
-| Requires tools in container (`tar`, `sh`) | Yes                                    | Yes                            | No — uses `sshd` in helper pod         |
+| Works with PVCs                           | Partial - Only if mounted in container | Partial - Manual path required | Yes - Helper pod mounts PVC            |
+| Requires tools in container (`tar`, `sh`) | Yes                                    | Yes                            | No - uses `sshd` in helper pod         |
 | Supports `readOnlyRootFilesystem` pods    | No                                     | No                             | Yes                                    |
 | Works on `distroless`/`scratch` images    | No                                     | No                             | Yes                                    |
 | Affects main application container        | Yes                                    | Yes                            | No                                     |
 | Requires container to run as root         | Often yes                              | Often yes                      | No or configurable via helper pod spec |
-| Safe for production workloads             | Risky                                  | Risky                          | Yes — safe for read                    |
+| Safe for production workloads             | Risky                                  | Risky                          | Yes - safe for read                    |
 | Auto-cleans after sync                    | No                                     | No                             | Yes                                    |
-| Supports concurrent transfers             | No                                     | No                             | Yes — parallel SFTP workers            |
-| Performance on large file trees           | Slow                                   | Slow                           | Fast — streaming + concurrency         |
+| Supports concurrent transfers             | No                                     | No                             | Yes - parallel SFTP workers            |
+| Performance on large file trees           | Slow                                   | Slow                           | Fast - streaming + concurrency         |
 
 ---
 
